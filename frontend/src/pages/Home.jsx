@@ -303,8 +303,8 @@ const Home = () => {
                 </h2>
                 <p
                   className={`text-sm ${selectedUser?.online
-                      ? "text-green-600"
-                      : "text-gray-500"
+                    ? "text-green-600"
+                    : "text-gray-500"
                     }`}
                 >
                   {selectedUser?.online
