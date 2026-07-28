@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('./../models/User');
 const Message = require('./../models/Message');
+const Conversation = require('./../models/Conversation');
 
 const onlineUsers = new Map(); // Map to store online users
 
@@ -79,16 +80,36 @@ const initSocket = (io) => {
         // })
 
         socket.on('send_message', async (data) => {
+            const senderId = socket.user._id;
+            const receiverId = data.receiver;
+
             const status = onlineUsers.has(data.receiver)
                 ? "delivered"
                 : "sent";
 
+            let conversation = await Conversation.findOne({
+                participants: { $all: [senderId, receiverId] }
+            });
+
+            if (!conversation) {
+                conversation = await Conversation.create({
+                    participants: [senderId, receiverId]
+                });
+            }
+
             const message = await Message.create({
-                sender: socket.user._id,
-                receiver: data.receiver,
+                conversation: conversation._id,
+                sender: senderId,
+                receiver: receiverId,
                 content: data.message,
                 status
             });
+
+            conversation.lastMessage = message._id;
+            const currentCount = conversation.unreadCount.get(receiverId.toString()) || 0;
+            conversation.unreadCount.set(receiverId.toString(), currentCount + 1);
+            await conversation.save();
+
             if (onlineUsers.has(data.receiver)) {
                 socket.to(onlineUsers.get(data.receiver)).emit('message_status_updated', {
                     messageId: message._id,
@@ -103,6 +124,7 @@ const initSocket = (io) => {
             // socket.to(onlineUsers.get(data.receiver)).emit('receive_message', {
             io.to([onlineUsers.get(data.receiver), socket.id]).emit('receive_message', {
                 _id: message._id,
+                conversation: message.conversation,
                 sender: message.sender,
                 receiver: message.receiver,
                 content: message.content,
@@ -131,6 +153,15 @@ const initSocket = (io) => {
                     }
                 }
             );
+
+            const conversation = await Conversation.findOne({
+                participants: { $all: [sender, receiverId] },
+            });
+
+            if (conversation) {
+                conversation.unreadCount.set(receiverId.toString(), 0);
+                await conversation.save();
+            }
 
             const senderSocketId = onlineUsers.get(sender);
 
