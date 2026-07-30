@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { io } from 'socket.io-client'
 import { useAuth } from './AuthContext'
-import { getUsers } from '../services/user.service'
+import { getConversations } from '../services/conversation.service'
 import { getMessages } from '../services/message.service'
 
 const ChatContext = createContext({})
@@ -13,8 +13,8 @@ export const useChat = () => {
 export const ChatProvider = ({ children }) => {
     const { token, user: currentUser } = useAuth()
 
-    const [users, setUsers] = useState([])
-    const [selectedUser, setSelectedUser] = useState(null)
+    const [conversations, setConversations] = useState([])
+    const [activeConversationId, setActiveConversationId] = useState(null)
     const [messages, setMessages] = useState([])
     const [isTyping, setIsTyping] = useState(false)
 
@@ -25,26 +25,15 @@ export const ChatProvider = ({ children }) => {
     useEffect(() => {
         if (!token) return
 
-        socket.current = io(import.meta.env.VITE_SOCKET_URL, {
-            auth: { token }
-        })
+        socket.current = io(import.meta.env.VITE_SOCKET_URL, { auth: { token } })
 
-        socket.current.on('connect', () => {
-            console.log('connected', socket.current.id)
-        })
-
-        socket.current.on('connect_error', (err) => {
-            console.log('Connection failed:', err.message)
-        })
+        socket.current.on('connect', () => console.log('connected', socket.current.id))
+        socket.current.on('connect_error', (err) => console.log('Connection failed:', err.message))
 
         socket.current.on("online_users", (onlineIds) => {
-            setUsers(prev =>
-                prev.map(user =>
-                    onlineIds.includes(user._id)
-                        ? { ...user, online: true }
-                        : { ...user, online: false }
-                )
-            );
+            setConversations(prev =>
+                prev.map(conv => ({ ...conv, online: onlineIds.includes(conv._id) }))
+            )
         })
 
         return () => {
@@ -52,171 +41,151 @@ export const ChatProvider = ({ children }) => {
         }
     }, [token])
 
-    // --- event listeners that depend on selectedUser ---
+    // --- event listeners: filtered by activeConversationId ---
     useEffect(() => {
         if (!socket.current) return
 
+        // find the participant id for the currently open conversation (for typing match)
+        const activeParticipantId = conversations.find(
+            c => c.conversationId === activeConversationId
+        )?._id
+
         const receiveHandler = (data) => {
-            if (!selectedUser) return
+            const isActive = String(data.conversation) === String(activeConversationId)
 
-            const isIncoming = String(data.sender) === String(selectedUser._id)
-            const isOutgoing = String(data.receiver) === String(selectedUser._id)
-
-            if (isIncoming || isOutgoing) {
+            if (isActive) {
                 setMessages(prev => [...prev, data])
-            }
-
-            if (isIncoming) {
-                socket.current.emit('mark_seen', { sender: data.sender })
+                if (String(data.sender) !== String(currentUser?.id || currentUser?._id)) {
+                    socket.current.emit('mark_seen', { conversationId: activeConversationId })
+                }
             }
         }
 
         const typingHandler = (data) => {
-            if (selectedUser && String(data.sender) === String(selectedUser._id)) {
+            if (activeParticipantId && String(data.sender) === String(activeParticipantId)) {
                 setIsTyping(data.typing)
             }
         }
 
         const onlineHandler = (data) => {
-            setUsers(prev =>
-                prev.map(user =>
-                    user._id === data.userId
-                        ? {
-                            ...user,
-                            online: true,
-                            lastSeen: null
-                        }
-                        : user
+            setConversations(prev =>
+                prev.map(conv =>
+                    conv._id === data.userId ? { ...conv, online: true, lastSeen: null } : conv
                 )
-            );
-
-            if (selectedUser?._id === data.userId) {
-                setSelectedUser(prev => ({
-                    ...prev,
-                    online: true,
-                    lastSeen: null
-                }));
-            }
-        };
+            )
+        }
 
         const offlineHandler = (data) => {
-            setUsers(prev =>
-                prev.map(user =>
-                    user._id === data.userId
-                        ? {
-                            ...user,
-                            online: false,
-                            lastSeen: data.lastSeen
-                        }
-                        : user
+            setConversations(prev =>
+                prev.map(conv =>
+                    conv._id === data.userId ? { ...conv, online: false, lastSeen: data.lastSeen } : conv
                 )
-            );
-
-            if (selectedUser?._id === data.userId) {
-                setSelectedUser(prev => ({
-                    ...prev,
-                    online: false,
-                    lastSeen: data.lastSeen
-                }));
-            }
-        };
+            )
+        }
 
         const statusHandler = (data) => {
             setMessages(prev =>
                 prev.map(msg =>
-                    String(msg._id) === String(data.messageId)
-                        ? { ...msg, status: data.status }
-                        : msg
+                    String(msg._id) === String(data.messageId) ? { ...msg, status: data.status } : msg
                 )
-            );
+            )
         }
-        socket.current.on("receive_message", receiveHandler);
-        socket.current.on("typing", typingHandler);
-        socket.current.on("user_online", onlineHandler);
-        socket.current.on("user_offline", offlineHandler);
+
+        socket.current.on("receive_message", receiveHandler)
+        socket.current.on("typing", typingHandler)
+        socket.current.on("user_online", onlineHandler)
+        socket.current.on("user_offline", offlineHandler)
         socket.current.on("message_status_updated", statusHandler)
 
         return () => {
-            socket.current.off("receive_message", receiveHandler);
-            socket.current.off("typing", typingHandler);
-            socket.current.off("user_online", onlineHandler);
-            socket.current.off("user_offline", offlineHandler);
+            socket.current.off("receive_message", receiveHandler)
+            socket.current.off("typing", typingHandler)
+            socket.current.off("user_online", onlineHandler)
+            socket.current.off("user_offline", offlineHandler)
             socket.current.off("message_status_updated", statusHandler)
         }
-    }, [selectedUser])
+    }, [activeConversationId, conversations, currentUser])
 
+    // --- fetch conversations ---
     useEffect(() => {
         if (!token) return
 
-        const fetchUsers = async () => {
+        const fetchConversations = async () => {
             try {
-                const data = await getUsers();
-                setUsers(data.users);
+                const data = await getConversations()
+                const result = data.conversations.map((conv) => ({
+                    ...conv.participant,
+                    conversationId: conv._id,
+                    lastMessage: conv.lastMessage?.content || null,
+                    lastMessageTime: conv.lastMessage?.createdAt
+                        ? new Date(conv.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        : null,
+                    unreadCount: conv.unreadCount,
+                }))
+                setConversations(result)
             } catch (error) {
-                console.error("Error fetching users:", error);
+                console.error("Error fetching conversations:", error)
             }
-        };
+        }
 
-        fetchUsers();
-    }, [token]);
+        fetchConversations()
+    }, [token])
 
-    // --- select a user: fetch history + mark seen ---
-    const selectUser = async (user) => {
-        setSelectedUser(user)
+    // --- open / close a conversation (called by ChatWindow based on URL) ---
+    const openConversation = async (conversationId) => {
+        setActiveConversationId(conversationId)
         setIsTyping(false)
 
         try {
-            const data = await getMessages(user._id)
+            const data = await getMessages(conversationId)
             setMessages(data.messages)
         } catch (error) {
             console.error('Error fetching messages:', error)
         }
 
-        socket.current?.emit('mark_seen', { sender: user._id })
+        socket.current?.emit('mark_seen', { conversationId })
     }
 
+    const closeConversation = () => {
+        setActiveConversationId(null)
+        setMessages([])
+        setIsTyping(false)
+    }
 
     // --- send a message ---
-    const sendMessage = (text) => {
-        if (!text.trim() || !selectedUser || !socket.current) return
+    const sendMessage = (text, conversationId, receiverId) => {
+        if (!text.trim() || !socket.current) return
 
         socket.current.emit('send_message', {
-            receiver: selectedUser._id,
+            receiver: receiverId,
+            conversationId,
             message: text
         })
 
-        socket.current.emit('typing', {
-            receiver: selectedUser._id,
-            typing: false
-        })
+        socket.current.emit('typing', { receiver: receiverId, typing: false })
     }
 
     // --- typing debounce ---
-    const handleTyping = () => {
-        if (!selectedUser || !socket.current) return
+    const handleTyping = (receiverId) => {
+        if (!socket.current || !receiverId) return
 
-        socket.current.emit("typing", {
-            receiver: selectedUser._id,
-            typing: true,
-        });
+        socket.current.emit("typing", { receiver: receiverId, typing: true })
 
-        clearTimeout(typingTimeout.current);
+        clearTimeout(typingTimeout.current)
 
         typingTimeout.current = setTimeout(() => {
-            socket.current.emit("typing", {
-                receiver: selectedUser._id,
-                typing: false,
-            });
-        }, 1000);
+            socket.current.emit("typing", { receiver: receiverId, typing: false })
+        }, 1000)
     }
 
     const value = {
-        users,
-        selectedUser,
+        conversations,
+        activeConversationId,
         messages,
         isTyping,
         currentUser,
-        selectUser,
+        openConversation,
+        closeConversation,
         sendMessage,
         handleTyping
     }

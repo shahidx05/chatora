@@ -6,11 +6,11 @@ import './index.css'
 import App from './App.jsx'
 
 createRoot(document.getElementById('root')).render(
-    <AuthProvider>
-        <ChatProvider>
-            <BrowserRouter>
+    <BrowserRouter>
+        <AuthProvider>
+            <ChatProvider>
                 <App />
-            </BrowserRouter>
-        </ChatProvider>
-    </AuthProvider>
+            </ChatProvider>
+        </AuthProvider>
+    </BrowserRouter>
 )

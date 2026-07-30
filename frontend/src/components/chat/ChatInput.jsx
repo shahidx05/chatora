@@ -2,18 +2,18 @@ import { useState } from 'react'
 import { IoSend } from 'react-icons/io5'
 import { useChat } from '../../context/ChatContext'
 
-const ChatInput = () => {
+const ChatInput = ({ conversationId, receiverId }) => {
   const { sendMessage, handleTyping } = useChat()
   const [message, setMessage] = useState('')
 
   const handleChange = (e) => {
     setMessage(e.target.value)
-    handleTyping()
+    handleTyping(receiverId)
   }
 
   const handleSend = () => {
     if (message.trim() === '') return
-    sendMessage(message)
+    sendMessage(message, conversationId, receiverId)
     setMessage('')
   }
 

@@ -1,6 +1,6 @@
 import api from "../api/axios";
 
-export const getMessages = async (id) => {
-    const response = await api.get(`/messages/${id}`);
+export const getMessages = async (conversationId) => {
+    const response = await api.get(`/messages/${conversationId}`);
     return response.data;
 };

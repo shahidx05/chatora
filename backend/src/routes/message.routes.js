@@ -4,6 +4,6 @@ const messageController = require('../controllers/message.controller');
 
 const router = express.Router();
 
-router.get('/:userId', authMiddleware, messageController.getMessages);
+router.get('/:conversationId', authMiddleware, messageController.getMessages);
 
 module.exports = router;

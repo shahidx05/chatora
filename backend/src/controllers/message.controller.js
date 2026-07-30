@@ -2,15 +2,10 @@ const Message = require('../models/Message');
 
 exports.getMessages = async (req, res) => {
     try {
-        const myId = req.user.id;
-        const { userId } = req.params;
+        const { conversationId } = req.params;
 
-        const messages = await Message.find({
-            $or: [
-                { sender: myId, receiver: userId },
-                { sender: userId, receiver: myId }
-            ]
-        }).sort({ createdAt: 1 });
+        const messages = await Message.find({ conversation: conversationId })
+            .sort({ createdAt: 1 });
 
         res.status(200).json({
             success: true,

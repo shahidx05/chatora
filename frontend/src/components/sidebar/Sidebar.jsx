@@ -1,12 +1,14 @@
+import { useNavigate } from 'react-router-dom'
 import { useChat } from '../../context/ChatContext'
-import UserList from './UserList'
+import ConversationList from './ConversationList'
 
 const Sidebar = () => {
-    const { users, selectedUser, selectUser } = useChat()
+    const { conversations } = useChat()
+    const navigate = useNavigate()
 
     return (
         <aside className="w-80 bg-white border-r flex flex-col">
-            <div className="p-5 border-b">
+            <div className="p-5 border-b" onClick={() => navigate('/')}>
                 <h1 className="text-2xl font-bold">Chat App</h1>
                 <input
                     type="text"
@@ -15,10 +17,9 @@ const Sidebar = () => {
                 />
             </div>
 
-            <UserList
-                users={users}
-                selectedUser={selectedUser}
-                onSelectUser={selectUser}
+            <ConversationList
+                conversations={conversations}
+                onSelectConversation={(conv) => navigate(`/chat/${conv.conversationId}`)}
             />
         </aside>
     )

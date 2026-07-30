@@ -83,18 +83,20 @@ const initSocket = (io) => {
             const senderId = socket.user._id;
             const receiverId = data.receiver;
 
-            const status = onlineUsers.has(data.receiver)
-                ? "delivered"
-                : "sent";
+            const status = onlineUsers.has(receiverId) ? "delivered" : "sent";
 
-            let conversation = await Conversation.findOne({
-                participants: { $all: [senderId, receiverId] }
-            });
+            let conversation;
+            if (data.conversationId) {
+                conversation = await Conversation.findById(data.conversationId);
+            } else {
+                conversation = await Conversation.findOne({
+                    participants: { $all: [senderId, receiverId] },
+                    $expr: { $eq: [{ $size: "$participants" }, 2] }
+                });
+            }
 
             if (!conversation) {
-                conversation = await Conversation.create({
-                    participants: [senderId, receiverId]
-                });
+                conversation = await Conversation.create({ participants: [senderId, receiverId] });
             }
 
             const message = await Message.create({
@@ -110,19 +112,14 @@ const initSocket = (io) => {
             conversation.unreadCount.set(receiverId.toString(), currentCount + 1);
             await conversation.save();
 
-            if (onlineUsers.has(data.receiver)) {
-                socket.to(onlineUsers.get(data.receiver)).emit('message_status_updated', {
+            if (onlineUsers.has(receiverId)) {
+                socket.to(onlineUsers.get(receiverId)).emit('message_status_updated', {
                     messageId: message._id,
                     status: "delivered"
                 });
             }
-            // console.log(`Message from ${socket.user.username}: ${msg}`);
-            console.log(`Message saved to DB: ${message}`);
-            // io.emit('receive_message', { user: socket.user.username, message: data.message });
 
-
-            // socket.to(onlineUsers.get(data.receiver)).emit('receive_message', {
-            io.to([onlineUsers.get(data.receiver), socket.id]).emit('receive_message', {
+            io.to([onlineUsers.get(receiverId), socket.id]).emit('receive_message', {
                 _id: message._id,
                 conversation: message.conversation,
                 sender: message.sender,
@@ -133,38 +130,31 @@ const initSocket = (io) => {
             });
         })
 
-        socket.on("mark_seen", async ({ sender }) => {
-            // sender = user whose messages I am reading
+        socket.on("mark_seen", async ({ conversationId }) => {
+            const receiverId = socket.user._id;
+
+            const conversation = await Conversation.findById(conversationId);
+            if (!conversation) return;
+
+            const senderId = conversation.participants.find(
+                (p) => p.toString() !== receiverId.toString()
+            );
+
             const messages = await Message.find({
-                sender,
-                receiver: socket.user._id,
+                conversation: conversationId,
+                receiver: receiverId,
                 status: "delivered"
             });
 
             await Message.updateMany(
-                {
-                    sender,
-                    receiver: socket.user._id,
-                    status: "delivered"
-                },
-                {
-                    $set: {
-                        status: "seen"
-                    }
-                }
+                { conversation: conversationId, receiver: receiverId, status: "delivered" },
+                { $set: { status: "seen" } }
             );
 
-            const conversation = await Conversation.findOne({
-                participants: { $all: [sender, receiverId] },
-            });
+            conversation.unreadCount.set(receiverId.toString(), 0);
+            await conversation.save();
 
-            if (conversation) {
-                conversation.unreadCount.set(receiverId.toString(), 0);
-                await conversation.save();
-            }
-
-            const senderSocketId = onlineUsers.get(sender);
-
+            const senderSocketId = onlineUsers.get(senderId?.toString());
             if (senderSocketId) {
                 for (const msg of messages) {
                     io.to(senderSocketId).emit("message_status_updated", {

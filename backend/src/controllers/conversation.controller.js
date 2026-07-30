@@ -2,8 +2,7 @@ const Conversation = require('../models/Conversation');
 
 exports.getConversations = async (req, res) => {
     try {
-        const userId = req.userId;
-
+        const userId = req.user.id;
         const conversations = await Conversation.find({
             participants: userId
         })
@@ -26,6 +25,7 @@ exports.getConversations = async (req, res) => {
 
         res.status(200).json({
             success: true,
+            userId,
             conversations: result
         });
 
