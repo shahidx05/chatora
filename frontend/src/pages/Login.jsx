@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 const Login = () => {
@@ -7,8 +7,12 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const { Login } = useAuth();
+  const { Login, isLoggedIn } = useAuth();
   const navigate = useNavigate();
+
+  if (isLoggedIn) {
+    return <Navigate to="/" />;
+  }
 
   const submitHandler = async (e) => {
     e.preventDefault();

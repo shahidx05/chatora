@@ -8,7 +8,7 @@ const Sidebar = () => {
 
     return (
         <aside className="w-80 bg-white border-r flex flex-col">
-            <div className="p-5 border-b" onClick={() => navigate('/')}>
+            <div className="p-5 border-b cursor-pointer" onClick={() => navigate('/')}>
                 <h1 className="text-2xl font-bold">Chat App</h1>
                 <input
                     type="text"

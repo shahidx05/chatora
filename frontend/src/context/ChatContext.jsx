@@ -17,6 +17,7 @@ export const ChatProvider = ({ children }) => {
     const [activeConversationId, setActiveConversationId] = useState(null)
     const [messages, setMessages] = useState([])
     const [isTyping, setIsTyping] = useState(false)
+    const [onlineUserIds, setOnlineUserIds] = useState([])
 
     const socket = useRef(null)
     const typingTimeout = useRef(null)
@@ -31,15 +32,20 @@ export const ChatProvider = ({ children }) => {
         socket.current.on('connect_error', (err) => console.log('Connection failed:', err.message))
 
         socket.current.on("online_users", (onlineIds) => {
-            setConversations(prev =>
-                prev.map(conv => ({ ...conv, online: onlineIds.includes(conv._id) }))
-            )
+            setOnlineUserIds(onlineIds)
         })
 
         return () => {
             socket.current?.disconnect()
         }
     }, [token])
+
+    useEffect(() => {
+        if (conversations.length === 0 || onlineUserIds.length === 0) return
+        setConversations(prev =>
+            prev.map(conv => ({ ...conv, online: onlineUserIds.includes(conv._id) }))
+        )
+    }, [conversations.length, onlineUserIds])
 
     // --- event listeners: filtered by activeConversationId ---
     useEffect(() => {
@@ -52,10 +58,13 @@ export const ChatProvider = ({ children }) => {
 
         const receiveHandler = (data) => {
             const isActive = String(data.conversation) === String(activeConversationId)
+            const isIncoming = String(data.sender) !== String(currentUser.id);
+
+            updateConversation(data, isIncoming && !isActive);
 
             if (isActive) {
                 setMessages(prev => [...prev, data])
-                if (String(data.sender) !== String(currentUser?.id || currentUser?._id)) {
+                if (isIncoming) {
                     socket.current.emit('mark_seen', { conversationId: activeConversationId })
                 }
             }
@@ -121,6 +130,7 @@ export const ChatProvider = ({ children }) => {
                         ? new Date(conv.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                         : null,
                     unreadCount: conv.unreadCount,
+                    typing: false,
                 }))
                 setConversations(result)
             } catch (error) {
@@ -135,6 +145,14 @@ export const ChatProvider = ({ children }) => {
     const openConversation = async (conversationId) => {
         setActiveConversationId(conversationId)
         setIsTyping(false)
+
+        setConversations(prev =>
+            prev.map(conv =>
+                conv.conversationId === conversationId
+                    ? { ...conv, unreadCount: 0 }
+                    : conv
+            )
+        );
 
         try {
             const data = await getMessages(conversationId)
@@ -152,6 +170,36 @@ export const ChatProvider = ({ children }) => {
         setIsTyping(false)
     }
 
+    // --- update conversations ---
+    const updateConversation = (message, incrementUnread = false) => {
+        setConversations(prev => {
+            const index = prev.findIndex(
+                c => c.conversationId === message.conversation
+            );
+
+            if (index === -1) return prev;
+
+            const updated = [...prev];
+
+            const conversation = {
+                ...updated[index],
+                lastMessage: message.content,
+                lastMessageTime: new Date(message.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                }),
+                lastMessageStatus: message.status,
+                typing: false,
+            };
+
+            if (incrementUnread) conversation.unreadCount++;
+
+            updated.splice(index, 1);
+            updated.unshift(conversation);
+
+            return updated;
+        });
+    };
     // --- send a message ---
     const sendMessage = (text, conversationId, receiverId) => {
         if (!text.trim() || !socket.current) return

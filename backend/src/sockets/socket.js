@@ -179,12 +179,14 @@ const initSocket = (io) => {
                 lastSeen
             });
 
-            onlineUsers.delete(userId);
+            if (onlineUsers.get(userId) === socket.id) {
+                onlineUsers.delete(userId);
 
-            io.emit("user_offline", {
-                userId,
-                lastSeen
-            });
+                io.emit("user_offline", {
+                    userId,
+                    lastSeen
+                });
+            }
 
             console.log(`❌ ${socket.user.username} disconnected`);
         });
