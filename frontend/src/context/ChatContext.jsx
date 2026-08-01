@@ -71,6 +71,13 @@ export const ChatProvider = ({ children }) => {
         }
 
         const typingHandler = (data) => {
+            setConversations(prev =>
+                prev.map(conv =>
+                    String(conv._id) === String(data.sender)
+                        ? { ...conv, typing: data.typing }
+                        : conv
+                )
+            );
             if (activeParticipantId && String(data.sender) === String(activeParticipantId)) {
                 setIsTyping(data.typing)
             }
@@ -98,6 +105,16 @@ export const ChatProvider = ({ children }) => {
                     String(msg._id) === String(data.messageId) ? { ...msg, status: data.status } : msg
                 )
             )
+            setConversations(prev =>
+                prev.map(conv =>
+                    conv.lastMessageId === data.messageId
+                        ? {
+                            ...conv,
+                            lastMessageStatus: data.status,
+                        }
+                        : conv
+                )
+            );
         }
 
         socket.current.on("receive_message", receiveHandler)
@@ -126,6 +143,9 @@ export const ChatProvider = ({ children }) => {
                     ...conv.participant,
                     conversationId: conv._id,
                     lastMessage: conv.lastMessage?.content || null,
+                    lastMessageId: conv.lastMessage?._id || null,
+                    lastMessageSender: conv.lastMessage?.sender || null,
+                    lastMessageStatus: conv.lastMessage?.status || null,
                     lastMessageTime: conv.lastMessage?.createdAt
                         ? new Date(conv.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                         : null,
@@ -184,11 +204,13 @@ export const ChatProvider = ({ children }) => {
             const conversation = {
                 ...updated[index],
                 lastMessage: message.content,
+                lastMessageId: message._id,
+                lastMessageSender: message.sender,
+                lastMessageStatus: message.status,
                 lastMessageTime: new Date(message.createdAt).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
                 }),
-                lastMessageStatus: message.status,
                 typing: false,
             };
 
