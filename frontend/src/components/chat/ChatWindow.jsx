@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useLocation } from 'react-router-dom'
 import { useChat } from '../../context/ChatContext'
 import ChatHeader from './ChatHeader'
 import MessageList from './MessageList'
@@ -7,16 +7,30 @@ import TypingIndicator from './TypingIndicator'
 import ChatInput from './ChatInput'
 
 const ChatWindow = () => {
-    const { conversationId } = useParams()
+    const { conversationId, userId } = useParams()
+    const location = useLocation()
     const { conversations, openConversation, closeConversation, messages, isTyping } = useChat()
 
-    const selectedConversation = conversations.find(c => c.conversationId === conversationId)
+    // const selectedConversation = conversations.find(c => c.conversationId === conversationId)
+
+    let selectedConversation = null;
+
+    if (conversationId) {
+        selectedConversation = conversations.find(c => c.conversationId === conversationId)
+    } else if (userId) {
+        selectedConversation = location.state?.participant;
+    }
 
     useEffect(() => {
-        if (!conversationId) return
-        openConversation(conversationId)
+        if (conversationId) {
+            openConversation(conversationId)
+        } else {
+            closeConversation()
+        }
         return () => closeConversation()
-    }, [conversationId])
+    }, [conversationId, userId])
+
+    if (!selectedConversation) return null
 
     if (!selectedConversation) return null
 

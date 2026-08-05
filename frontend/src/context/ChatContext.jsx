@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { io } from 'socket.io-client'
 import { useAuth } from './AuthContext'
 import { getConversations } from '../services/conversation.service'
@@ -12,6 +13,8 @@ export const useChat = () => {
 
 export const ChatProvider = ({ children }) => {
     const { token, user: currentUser } = useAuth()
+    const navigate = useNavigate()
+    const location = useLocation()
 
     const [conversations, setConversations] = useState([])
     const [activeConversationId, setActiveConversationId] = useState(null)
@@ -21,6 +24,11 @@ export const ChatProvider = ({ children }) => {
 
     const socket = useRef(null)
     const typingTimeout = useRef(null)
+    const conversationsRef = useRef(conversations)
+
+    useEffect(() => {
+        conversationsRef.current = conversations
+    }, [conversations])
 
     // --- connection setup ---
     useEffect(() => {
@@ -57,12 +65,27 @@ export const ChatProvider = ({ children }) => {
         )?._id
 
         const receiveHandler = (data) => {
-            const isActive = String(data.conversation) === String(activeConversationId)
+            const existingConv = conversationsRef.current.find(c => String(c.conversationId) === String(data.conversation));
             const isIncoming = String(data.sender) !== String(currentUser.id);
+            const isPendingChat = location.pathname.includes('/chat/new/');
 
-            updateConversation(data, isIncoming && !isActive);
+            let isActive = String(data.conversation) === String(activeConversationId)
 
-            if (isActive) {
+            if (isIncoming && !existingConv) {
+                navigate(`/chat/${data.conversation}`, { replace: true });
+                setActiveConversationId(data.conversation);
+                isActive = true;
+            }
+
+            if (!existingConv) {
+                fetchConversations();
+            }
+            else {
+                updateConversation(data, isIncoming && !isActive);
+            }
+
+
+            if (isActive || isPendingChat) {
                 setMessages(prev => [...prev, data])
                 if (isIncoming) {
                     socket.current.emit('mark_seen', { conversationId: activeConversationId })
@@ -130,39 +153,47 @@ export const ChatProvider = ({ children }) => {
             socket.current.off("user_offline", offlineHandler)
             socket.current.off("message_status_updated", statusHandler)
         }
-    }, [activeConversationId, conversations, currentUser])
+    }, [activeConversationId, currentUser])
 
     // --- fetch conversations ---
-    useEffect(() => {
+    const fetchConversations = useCallback(async () => {
         if (!token) return
 
-        const fetchConversations = async () => {
-            try {
-                const data = await getConversations()
-                const result = data.conversations.map((conv) => ({
-                    ...conv.participant,
-                    conversationId: conv._id,
-                    lastMessage: conv.lastMessage?.content || null,
-                    lastMessageId: conv.lastMessage?._id || null,
-                    lastMessageSender: conv.lastMessage?.sender || null,
-                    lastMessageStatus: conv.lastMessage?.status || null,
-                    lastMessageTime: conv.lastMessage?.createdAt
-                        ? new Date(conv.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        : null,
-                    unreadCount: conv.unreadCount,
-                    typing: false,
-                }))
-                setConversations(result)
-            } catch (error) {
-                console.error("Error fetching conversations:", error)
-            }
+        try {
+            const data = await getConversations()
+            const result = data.conversations.map((conv) => ({
+                ...conv.participant,
+                conversationId: conv._id,
+                lastMessage: conv.lastMessage?.content || null,
+                lastMessageId: conv.lastMessage?._id || null,
+                lastMessageSender: conv.lastMessage?.sender || null,
+                lastMessageStatus: conv.lastMessage?.status || null,
+                lastMessageTime: conv.lastMessage?.createdAt
+                    ? new Date(conv.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    : null,
+                unreadCount: conv.unreadCount,
+                typing: false,
+            }))
+            setConversations(result)
+        } catch (error) {
+            console.error("Error fetching conversations:", error)
         }
-
-        fetchConversations()
     }, [token])
+
+    useEffect(() => {
+        fetchConversations()
+    }, [fetchConversations])
 
     // --- open / close a conversation (called by ChatWindow based on URL) ---
     const openConversation = async (conversationId) => {
+        // If it's a pending chat (no ID yet), just setup empty state and exit
+        if (!conversationId) {
+            setActiveConversationId(null)
+            setMessages([])
+            setIsTyping(false)
+            return;
+        }
+
         setActiveConversationId(conversationId)
         setIsTyping(false)
 
@@ -191,7 +222,7 @@ export const ChatProvider = ({ children }) => {
     }
 
     // --- update conversations ---
-    const updateConversation = (message, incrementUnread = false) => {
+    const updateConversation = useCallback((message, incrementUnread = false) => {
         setConversations(prev => {
             const index = prev.findIndex(
                 c => c.conversationId === message.conversation
@@ -221,7 +252,7 @@ export const ChatProvider = ({ children }) => {
 
             return updated;
         });
-    };
+    }, []);
     // --- send a message ---
     const sendMessage = (text, conversationId, receiverId) => {
         if (!text.trim() || !socket.current) return

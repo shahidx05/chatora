@@ -16,6 +16,7 @@ const App = () => {
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<Home />}>
             <Route index element={<EmptyState />} />
+            <Route path="chat/new/:userId" element={<ChatWindow />} />
             <Route path="chat/:conversationId" element={<ChatWindow />} />
           </Route>
         </Route>
