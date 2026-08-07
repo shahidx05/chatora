@@ -9,7 +9,7 @@ const messageSchema = new mongoose.Schema({
     receiver: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: false
     },
     conversation: {
         type: mongoose.Schema.Types.ObjectId,
@@ -24,7 +24,11 @@ const messageSchema = new mongoose.Schema({
         type: String,
         enum: ['sent', 'delivered', 'seen'],
         default: 'sent'
-    }
+    },
+    readBy: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('Message', messageSchema);

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom'
 import { useChat } from '../../context/ChatContext'
 import ConversationList from './ConversationList'
+import CreateGroupModal from './CreateGroupModal';
 import { getUsers } from '../../services/user.service';
 
 const Sidebar = () => {
@@ -11,6 +12,7 @@ const Sidebar = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
 
     useEffect(() => {
         if (searchQuery.trim() === '') {
@@ -58,6 +60,12 @@ const Sidebar = () => {
                 >
                     Chat App
                 </h1>
+                <button
+                    onClick={() => setIsGroupModalOpen(true)}
+                    className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full font-medium"
+                >
+                    + Group
+                </button>
                 <input
                     type="text"
                     value={searchQuery}
@@ -94,6 +102,10 @@ const Sidebar = () => {
                     onSelectConversation={(conv) => navigate(`/chat/${conv.conversationId}`)}
                 />
             )}
+            <CreateGroupModal 
+                isOpen={isGroupModalOpen} 
+                onClose={() => setIsGroupModalOpen(false)} 
+            />
         </aside>
     )
 }

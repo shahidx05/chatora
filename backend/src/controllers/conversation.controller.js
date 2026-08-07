@@ -3,6 +3,7 @@ const Conversation = require('../models/Conversation');
 exports.getConversations = async (req, res) => {
     try {
         const userId = req.user.id;
+
         const conversations = await Conversation.find({
             participants: userId
         })
@@ -11,6 +12,17 @@ exports.getConversations = async (req, res) => {
             .sort({ updatedAt: -1 });
 
         const result = conversations.map(conversation => {
+            if (conversation.isGroup) {
+                return {
+                    _id: conversation._id,
+                    isGroupChat: true,
+                    groupName: conversation.groupName,
+                    groupAdmin: conversation.groupAdmin,
+                    participants: conversation.participants,
+                    lastMessage: conversation.lastMessage,
+                    unreadCount: conversation.unreadCount.get(userId.toString()) || 0
+                };
+            }
             const participant = conversation.participants.find(
                 user => String(user._id) !== String(userId)
             );

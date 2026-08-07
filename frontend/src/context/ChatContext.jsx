@@ -161,19 +161,27 @@ export const ChatProvider = ({ children }) => {
 
         try {
             const data = await getConversations()
-            const result = data.conversations.map((conv) => ({
-                ...conv.participant,
-                conversationId: conv._id,
-                lastMessage: conv.lastMessage?.content || null,
-                lastMessageId: conv.lastMessage?._id || null,
-                lastMessageSender: conv.lastMessage?.sender || null,
-                lastMessageStatus: conv.lastMessage?.status || null,
-                lastMessageTime: conv.lastMessage?.createdAt
-                    ? new Date(conv.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    : null,
-                unreadCount: conv.unreadCount,
-                typing: false,
-            }))
+            const result = data.conversations.map((conv) => {
+                const chatName = conv.isGroupChat ? conv.groupName : conv.participant?.name;
+                const participantId = conv.isGroupChat ? null : conv.participant?._id;
+
+                return {
+                    ...conv.participant,
+                    _id: participantId,
+                    name: chatName,
+                    isGroupChat: conv.isGroupChat,
+                    conversationId: conv._id,
+                    lastMessage: conv.lastMessage?.content || null,
+                    lastMessageId: conv.lastMessage?._id || null,
+                    lastMessageSender: conv.lastMessage?.sender || null,
+                    lastMessageStatus: conv.lastMessage?.status || null,
+                    lastMessageTime: conv.lastMessage?.createdAt
+                        ? new Date(conv.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        : null,
+                    unreadCount: conv.unreadCount,
+                    typing: false,
+                }
+            })
             setConversations(result)
         } catch (error) {
             console.error("Error fetching conversations:", error)
@@ -288,7 +296,8 @@ export const ChatProvider = ({ children }) => {
         openConversation,
         closeConversation,
         sendMessage,
-        handleTyping
+        handleTyping,
+        fetchConversations
     }
 
     return (
