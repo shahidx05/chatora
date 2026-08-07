@@ -95,14 +95,25 @@ export const ChatProvider = ({ children }) => {
 
         const typingHandler = (data) => {
             setConversations(prev =>
-                prev.map(conv =>
-                    String(conv._id) === String(data.sender)
-                        ? { ...conv, typing: data.typing }
-                        : conv
-                )
+                prev.map(conv => {
+                    const isMatch = data.conversationId
+                        ? String(conv.conversationId) === String(data.conversationId)
+                        : String(conv._id) === String(data.sender);
+
+                    return isMatch ? { ...conv, typing: data.typing } : conv;
+                })
             );
-            if (activeParticipantId && String(data.sender) === String(activeParticipantId)) {
-                setIsTyping(data.typing)
+
+            const isCurrentChat = data.conversationId
+                ? String(data.conversationId) === String(activeConversationId)
+                : (activeParticipantId && String(data.sender) === String(activeParticipantId));
+
+            if (isCurrentChat) {
+                if (data.typing) {
+                    setIsTyping(data.senderName ? `${data.senderName} is typing...` : true)
+                } else {
+                    setIsTyping(false)
+                }
             }
         }
 
@@ -275,15 +286,17 @@ export const ChatProvider = ({ children }) => {
     }
 
     // --- typing debounce ---
-    const handleTyping = (receiverId) => {
-        if (!socket.current || !receiverId) return
+    const handleTyping = (receiverId, conversationId) => {
+        if (!socket.current) return
 
-        socket.current.emit("typing", { receiver: receiverId, typing: true })
+        if (!receiverId && !conversationId) return;
+
+        socket.current.emit("typing", { receiver: receiverId, conversationId, typing: true })
 
         clearTimeout(typingTimeout.current)
 
         typingTimeout.current = setTimeout(() => {
-            socket.current.emit("typing", { receiver: receiverId, typing: false })
+            socket.current.emit("typing", { receiver: receiverId, conversationId, typing: false })
         }, 1000)
     }
 

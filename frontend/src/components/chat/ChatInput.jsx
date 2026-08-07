@@ -8,7 +8,7 @@ const ChatInput = ({ conversationId, receiverId }) => {
 
   const handleChange = (e) => {
     setMessage(e.target.value)
-    handleTyping(receiverId)
+    handleTyping(receiverId, conversationId)
   }
 
   const handleSend = () => {

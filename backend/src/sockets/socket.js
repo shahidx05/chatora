@@ -134,7 +134,7 @@ const initSocket = (io) => {
             const messagePayload = {
                 _id: message._id,
                 conversation: message.conversation,
-                sender: message.sender,
+                sender:{ _id: senderId, name: socket.user.name},
                 receiver: message.receiver,
                 content: message.content,
                 status: message.status,
@@ -187,8 +187,8 @@ const initSocket = (io) => {
 
         socket.on('typing', async (data) => {
             if (data.conversationId) {
-                const converstation = await Conversation.findById(data.conversationId);
-                if (!converstation) return;
+                const conversation = await Conversation.findById(data.conversationId);
+                if (!conversation) return;
 
                 conversation.participants.forEach(participantId => {
                     if (participantId.toString() !== socket.user._id.toString()) {
@@ -196,6 +196,7 @@ const initSocket = (io) => {
                         if (participantSocketId) {
                             io.to(participantSocketId).emit('typing', {
                                 sender: socket.user._id,
+                                senderName: socket.user.name,
                                 conversationId: data.conversationId,
                                 typing: data.typing
                             });
@@ -208,6 +209,8 @@ const initSocket = (io) => {
                 if (receiverSocket) {
                     io.to(receiverSocket).emit('typing', {
                         sender: socket.user._id,
+                        senderName: socket.user.name,
+                        conversationId: data.conversationId,
                         typing: data.typing
                     });
                 }

@@ -2,7 +2,7 @@ import { useRef, useEffect } from 'react'
 import { useChat } from '../../context/ChatContext'
 import MessageBubble from './MessageBubble'
 
-const MessageList = ({ messages }) => {
+const MessageList = ({ messages, isGroupChat }) => {
     const { currentUser } = useChat()
     const messagesEndRef = useRef(null)
 
@@ -17,13 +17,20 @@ const MessageList = ({ messages }) => {
                     No messages yet.
                 </div>
             ) : (
-                messages.map((message) => (
-                    <MessageBubble
-                        key={message._id}
-                        message={message}
-                        isMine={String(message.sender) === String(currentUser?.id || currentUser?._id)}
-                    />
-                ))
+                messages.map((message) => {
+                    // Extract ID safely (whether populated object or string ID)
+                    const senderId = message.sender?._id || message.sender;
+                    const isMine = String(senderId) === String(currentUser?.id || currentUser?._id);
+
+                    return (
+                        <MessageBubble
+                            key={message._id}
+                            message={message}
+                            isMine={isMine}
+                            isGroupChat={isGroupChat}
+                        />
+                    )
+                })
             )}
             <div ref={messagesEndRef}></div>
         </div>

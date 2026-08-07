@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useParams, useLocation } from 'react-router-dom'
+import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useChat } from '../../context/ChatContext'
 import ChatHeader from './ChatHeader'
 import MessageList from './MessageList'
@@ -9,9 +9,8 @@ import ChatInput from './ChatInput'
 const ChatWindow = () => {
     const { conversationId, userId } = useParams()
     const location = useLocation()
+    const navigate = useNavigate()
     const { conversations, openConversation, closeConversation, messages, isTyping } = useChat()
-
-    // const selectedConversation = conversations.find(c => c.conversationId === conversationId)
 
     let selectedConversation = null;
 
@@ -22,23 +21,28 @@ const ChatWindow = () => {
     }
 
     useEffect(() => {
+        if (userId && !location.state?.participant) {
+            navigate('/', { replace: true });
+            return;
+        }
+
         if (conversationId) {
             openConversation(conversationId)
         } else {
             closeConversation()
         }
         return () => closeConversation()
-    }, [conversationId, userId])
+    }, [conversationId, userId, location.state, navigate])
 
     if (!selectedConversation) return null
 
-    if (!selectedConversation) return null
+    const isGroupChat = selectedConversation.isGroupChat;
 
     return (
         <section className="flex-1 flex flex-col">
             <ChatHeader conversation={selectedConversation} />
-            <MessageList messages={messages} />
-            <TypingIndicator isTyping={isTyping} />
+            <MessageList messages={messages} isGroupChat={isGroupChat} />
+            <TypingIndicator typingData={isTyping} />
             <ChatInput conversationId={conversationId} receiverId={selectedConversation._id} />
         </section>
     )
