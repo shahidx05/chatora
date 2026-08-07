@@ -20,6 +20,10 @@ const messageSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    isSystemMessage: {
+        type: Boolean,
+        default: false
+    },
     status: {
         type: String,
         enum: ['sent', 'delivered', 'seen'],

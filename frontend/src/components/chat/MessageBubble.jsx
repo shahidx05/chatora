@@ -1,4 +1,13 @@
 const MessageBubble = ({ message, isMine, isGroupChat }) => {
+    if (message.isSystemMessage) {
+        return (
+            <div className="flex justify-center my-4">
+                <div className="bg-gray-200 text-gray-600 text-xs px-4 py-1.5 rounded-full text-center shadow-sm">
+                    {message.content}
+                </div>
+            </div>
+        );
+    }
     const time = message.createdAt
         ? new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         : '';
@@ -17,8 +26,8 @@ const MessageBubble = ({ message, isMine, isGroupChat }) => {
 
                 <div
                     className={`px-4 py-2 rounded-2xl break-words ${isMine
-                            ? "bg-blue-600 text-white rounded-br-md"
-                            : "bg-white border rounded-bl-md"
+                        ? "bg-blue-600 text-white rounded-br-md"
+                        : "bg-white border rounded-bl-md"
                         }`}
                 >
                     <p className="text-sm leading-relaxed">

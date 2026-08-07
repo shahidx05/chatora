@@ -13,10 +13,14 @@ const conversationSchema = new mongoose.Schema({
         type: String,
         trim: true,
     },
-    groupAdmin: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+    groupDescription: {
+        type: String,
+        default: ""
     },
+    groupAdmins: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
     lastMessage: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Message",
