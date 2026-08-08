@@ -172,6 +172,7 @@ export const ChatProvider = ({ children }) => {
 
         try {
             const data = await getConversations()
+            console.log(data)
             const result = data.conversations.map((conv) => {
                 const chatName = conv.isGroupChat ? conv.groupName : conv.participant?.name;
                 const participantId = conv.isGroupChat ? null : conv.participant?._id;
@@ -182,6 +183,8 @@ export const ChatProvider = ({ children }) => {
                     name: chatName,
                     isGroupChat: conv.isGroupChat,
                     conversationId: conv._id,
+                    participants: conv.participants || [], 
+                    groupAdmins: conv.groupAdmins || [],
                     lastMessage: conv.lastMessage?.content || null,
                     lastMessageId: conv.lastMessage?._id || null,
                     lastMessageSender: conv.lastMessage?.sender || null,

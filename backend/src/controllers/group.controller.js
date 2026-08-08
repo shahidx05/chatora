@@ -13,7 +13,7 @@ exports.createGroup = async (req, res) => {
         const groupChat = await Conversation.create({
             isGroup: true,
             groupName: groupName,
-            groupAdmin: req.user.id,
+            groupAdmins: [req.user.id],
             participants: allParticipants
         });
 
@@ -52,7 +52,7 @@ exports.addMembers = async (req, res) => {
             {
                 $addToSet: { participants: { $each: newMembers } }
             },
-            { new: true } // Return updated document
+            { new: true }
         );
 
         const systemMessage = await Message.create({
@@ -186,10 +186,10 @@ exports.leaveGroup = async (req, res) => {
             sender: userId,
             content: `${userName} left the group`,
             isSystemMessage: true,
-            readBy: group.participants 
+            readBy: group.participants
         });
 
-        group.lastMessage = systemMessage._id; 
+        group.lastMessage = systemMessage._id;
         await group.save();
 
         const updatedGroup = await Conversation.findById(groupId)

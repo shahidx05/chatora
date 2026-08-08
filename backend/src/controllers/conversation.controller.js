@@ -8,6 +8,7 @@ exports.getConversations = async (req, res) => {
             participants: userId
         })
             .populate('participants', '-password')
+            .populate('groupAdmins', '-password') 
             .populate('lastMessage')
             .sort({ updatedAt: -1 });
 
@@ -17,8 +18,8 @@ exports.getConversations = async (req, res) => {
                     _id: conversation._id,
                     isGroupChat: true,
                     groupName: conversation.groupName,
-                    groupAdmin: conversation.groupAdmin,
-                    participants: conversation.participants,
+                    groupAdmins: conversation.groupAdmins || [],
+                    participants: conversation.participants || [],
                     lastMessage: conversation.lastMessage,
                     unreadCount: conversation.unreadCount.get(userId.toString()) || 0
                 };

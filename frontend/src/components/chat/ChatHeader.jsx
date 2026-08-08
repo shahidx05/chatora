@@ -1,10 +1,13 @@
-const ChatHeader = ({ conversation }) => {
+const ChatHeader = ({ conversation, onInfoClick }) => {
     if (!conversation) return null;
 
     const isGroup = conversation.isGroupChat;
 
     return (
-        <header className="h-20 bg-white border-b flex items-center justify-between px-6">
+        <header
+            className="h-20 bg-white border-b flex items-center justify-between px-6"
+            onClick={isGroup ? onInfoClick : undefined}
+        >
             <div className="flex items-center gap-4">
                 <div className="relative">
                     <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center text-lg font-semibold">
