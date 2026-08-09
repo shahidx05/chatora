@@ -89,13 +89,13 @@ const initSocket = (io) => {
                 conversation = await Conversation.findById(data.conversationId);
             } else if (data.receiver) {
                 conversation = await Conversation.findOne({
-                    isGroupChat: false,
+                    isGroup: false,
                     participants: { $all: [senderId, data.receiver] },
                     $expr: { $eq: [{ $size: "$participants" }, 2] }
                 });
                 if (!conversation) {
                     conversation = await Conversation.create({
-                        isGroupChat: false,
+                        isGroup: false,
                         participants: [senderId, data.receiver]
                     });
                 }
@@ -104,7 +104,7 @@ const initSocket = (io) => {
             if (!conversation) return;
 
             let initialStatus = "sent";
-            if (!conversation.isGroupChat) {
+            if (!conversation.isGroup) {
                 const otherUserId = conversation.participants.find(p => p.toString() !== senderId.toString());
                 if (otherUserId && onlineUsers.has(otherUserId.toString())) {
                     initialStatus = "delivered";
@@ -134,7 +134,7 @@ const initSocket = (io) => {
             const messagePayload = {
                 _id: message._id,
                 conversation: message.conversation,
-                sender:{ _id: senderId, name: socket.user.name},
+                sender: { _id: senderId, name: socket.user.name },
                 receiver: message.receiver,
                 content: message.content,
                 status: message.status,
@@ -156,6 +156,19 @@ const initSocket = (io) => {
             //         status: "delivered"
             //     });
             // }
+
+            if (!conversation.isGroupChat) {
+                const otherUserId = conversation.participants.find(p => p.toString() !== senderId.toString());
+                const otherSocketId = onlineUsers.get(otherUserId?.toString());
+
+                if (otherSocketId && initialStatus === "delivered") {
+                    io.to(otherSocketId).emit('message_status_updated', {
+                        messageId: message._id,
+                        conversationId: conversation._id,
+                        status: "delivered"
+                    });
+                }
+            }
         })
 
         socket.on("mark_seen", async ({ conversationId }) => {

@@ -2,6 +2,7 @@ const Conversation = require('../models/Conversation');
 
 exports.getConversations = async (req, res) => {
     try {
+        console.log(req.user);
         const userId = req.user.id;
 
         const conversations = await Conversation.find({
@@ -18,6 +19,7 @@ exports.getConversations = async (req, res) => {
                     _id: conversation._id,
                     isGroupChat: true,
                     groupName: conversation.groupName,
+                    groupDescription: conversation.groupDescription || "",
                     groupAdmins: conversation.groupAdmins || [],
                     participants: conversation.participants || [],
                     lastMessage: conversation.lastMessage,

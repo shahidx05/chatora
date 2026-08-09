@@ -133,7 +133,25 @@ export const ChatProvider = ({ children }) => {
             )
         }
 
-        const statusHandler = (data) => {
+        // const statusHandler = (data) => {
+        //     setMessages(prev =>
+        //         prev.map(msg =>
+        //             String(msg._id) === String(data.messageId) ? { ...msg, status: data.status } : msg
+        //         )
+        //     )
+        //     setConversations(prev =>
+        //         prev.map(conv =>
+        //             conv.lastMessageId === data.messageId
+        //                 ? {
+        //                     ...conv,
+        //                     lastMessageStatus: data.status,
+        //                 }
+        //                 : conv
+        //         )
+        //     );
+        // }
+        // handles single-message "delivered" updates (1-1 chats only)
+        const deliveredHandler = (data) => {
             setMessages(prev =>
                 prev.map(msg =>
                     String(msg._id) === String(data.messageId) ? { ...msg, status: data.status } : msg
@@ -142,27 +160,46 @@ export const ChatProvider = ({ children }) => {
             setConversations(prev =>
                 prev.map(conv =>
                     conv.lastMessageId === data.messageId
-                        ? {
-                            ...conv,
-                            lastMessageStatus: data.status,
-                        }
+                        ? { ...conv, lastMessageStatus: data.status }
                         : conv
                 )
-            );
+            )
+        }
+
+        // handles batch "seen" updates (fires when someone opens the conversation)
+        const seenHandler = (data) => {
+            setMessages(prev =>
+                prev.map(msg =>
+                    String(msg.conversation) === String(data.conversationId)
+                        ? { ...msg, status: 'seen' }
+                        : msg
+                )
+            )
+            setConversations(prev =>
+                prev.map(conv =>
+                    conv.conversationId === data.conversationId
+                        ? { ...conv, lastMessageStatus: 'seen' }
+                        : conv
+                )
+            )
         }
 
         socket.current.on("receive_message", receiveHandler)
         socket.current.on("typing", typingHandler)
         socket.current.on("user_online", onlineHandler)
         socket.current.on("user_offline", offlineHandler)
-        socket.current.on("message_status_updated", statusHandler)
+        // socket.current.on("message_status_updated", statusHandler)
+        socket.current.on("message_status_updated", deliveredHandler)
+        socket.current.on("messages_seen", seenHandler)
 
         return () => {
             socket.current.off("receive_message", receiveHandler)
             socket.current.off("typing", typingHandler)
             socket.current.off("user_online", onlineHandler)
             socket.current.off("user_offline", offlineHandler)
-            socket.current.off("message_status_updated", statusHandler)
+            // socket.current.off("message_status_updated", statusHandler)
+            socket.current.off("message_status_updated", deliveredHandler)
+            socket.current.off("messages_seen", seenHandler)
         }
     }, [activeConversationId, currentUser])
 
@@ -183,7 +220,8 @@ export const ChatProvider = ({ children }) => {
                     name: chatName,
                     isGroupChat: conv.isGroupChat,
                     conversationId: conv._id,
-                    participants: conv.participants || [], 
+                    description: conv.groupDescription || "",
+                    participants: conv.participants || [],
                     groupAdmins: conv.groupAdmins || [],
                     lastMessage: conv.lastMessage?.content || null,
                     lastMessageId: conv.lastMessage?._id || null,

@@ -1,4 +1,6 @@
 const Conversation = require('../models/Conversation');
+const User = require("../models/User")
+const Message = require("../models/Message")
 
 exports.createGroup = async (req, res) => {
     try {
@@ -22,7 +24,7 @@ exports.createGroup = async (req, res) => {
             groupId: groupChat._id,
             isGroup: groupChat.isGroup,
             groupName: groupChat.groupName,
-            groupAdmin: groupChat.groupAdmin,
+            groupAdmins: groupChat.groupAdmins,
             participants: groupChat.participants
         });
     } catch (error) {
@@ -34,7 +36,9 @@ exports.addMembers = async (req, res) => {
     try {
         const { groupId } = req.params;
         const { newMembers } = req.body;
-        const adminName = req.user.name;
+
+        const admin = await User.findById(req.user.id);
+        const adminName = admin ? admin.name : "A member";
 
         if (!newMembers || newMembers.length === 0) {
             return res.status(400).json({ message: "No members provided to add" });
@@ -43,8 +47,8 @@ exports.addMembers = async (req, res) => {
         const group = await Conversation.findById(groupId);
         if (!group) return res.status(404).json({ message: "Group not found" });
 
-        if (!group.groupAdmins.includes(req.user.id)) {
-            return res.status(403).json({ message: "Only admins can add members" });
+        if (!group.groupAdmins.some(adminId => adminId.toString() === String(req.user.id))) {
+            return res.status(403).json({ message: "Only admins can perform this action" });
         }
 
         const updatedGroup = await Conversation.findByIdAndUpdate(
@@ -83,8 +87,8 @@ exports.removeMember = async (req, res) => {
 
         const group = await Conversation.findById(groupId);
 
-        if (!group.groupAdmins.includes(req.user.id)) {
-            return res.status(403).json({ message: "Only admins can remove members" });
+        if (!group.groupAdmins.some(adminId => adminId.toString() === String(req.user.id))) {
+            return res.status(403).json({ message: "Only admins can perform this action" });
         }
 
         const updatedGroup = await Conversation.findByIdAndUpdate(
@@ -163,7 +167,9 @@ exports.leaveGroup = async (req, res) => {
     try {
         const { groupId } = req.params;
         const userId = req.user.id;
-        const userName = req.user.name;
+
+        const user = await User.findById(userId);
+        const userName = user ? user.name : "A member";
 
         let group = await Conversation.findById(groupId);
         if (!group) return res.status(404).json({ message: "Group not found" });
