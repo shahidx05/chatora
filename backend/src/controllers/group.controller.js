@@ -86,10 +86,19 @@ exports.removeMember = async (req, res) => {
         const { userIdToRemove } = req.body;
 
         const group = await Conversation.findById(groupId);
+        if (!group) return res.status(404).json({ message: "Group not found" });
 
+        // FIX: Safe Admin Check
         if (!group.groupAdmins.some(adminId => adminId.toString() === String(req.user.id))) {
             return res.status(403).json({ message: "Only admins can perform this action" });
         }
+
+        // Fetch Names for System Message
+        const admin = await User.findById(req.user.id);
+        const adminName = admin ? admin.name : "Admin";
+
+        const removedUser = await User.findById(userIdToRemove);
+        const removedName = removedUser ? removedUser.name : "A member";
 
         const updatedGroup = await Conversation.findByIdAndUpdate(
             groupId,
@@ -97,9 +106,25 @@ exports.removeMember = async (req, res) => {
                 $pull: { participants: userIdToRemove, groupAdmins: userIdToRemove }
             },
             { new: true }
-        ).populate("participants", "-password").populate("groupAdmins", "-password");
+        );
 
-        res.status(200).json({ success: true, conversation: updatedGroup });
+        // CREATE SYSTEM MESSAGE
+        const systemMessage = await Message.create({
+            conversation: groupId,
+            sender: req.user.id,
+            content: `${adminName} removed ${removedName}`,
+            isSystemMessage: true,
+            readBy: updatedGroup.participants
+        });
+
+        updatedGroup.lastMessage = systemMessage._id;
+        await updatedGroup.save();
+
+        const fullUpdatedGroup = await Conversation.findById(groupId)
+            .populate("participants", "-password")
+            .populate("groupAdmins", "-password");
+
+        res.status(200).json({ success: true, conversation: fullUpdatedGroup });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -113,13 +138,34 @@ exports.updateGroup = async (req, res) => {
         const group = await Conversation.findById(groupId);
         if (!group) return res.status(404).json({ message: "Group not found" });
 
-        if (!group.groupAdmins.includes(req.user.id)) {
+        // FIX: Safe Admin Check
+        if (!group.groupAdmins.some(adminId => adminId.toString() === String(req.user.id))) {
             return res.status(403).json({ message: "Only admins can update group info" });
         }
+
+        // Fetch Admin Name
+        const admin = await User.findById(req.user.id);
+        const adminName = admin ? admin.name : "Admin";
+
+        // Logic to determine what exactly changed for the message
+        let actionText = "changed the group info";
+        if (groupName && groupDescription !== undefined) actionText = `changed the group name to "${groupName}" and updated description`;
+        else if (groupName) actionText = `changed the group name to "${groupName}"`;
+        else if (groupDescription !== undefined) actionText = `changed the group description`;
 
         if (groupName) group.groupName = groupName;
         if (groupDescription !== undefined) group.groupDescription = groupDescription;
 
+        // CREATE SYSTEM MESSAGE
+        const systemMessage = await Message.create({
+            conversation: groupId,
+            sender: req.user.id,
+            content: `${adminName} ${actionText}`,
+            isSystemMessage: true,
+            readBy: group.participants
+        });
+
+        group.lastMessage = systemMessage._id;
         await group.save();
 
         const updatedGroup = await Conversation.findById(groupId)
@@ -138,26 +184,53 @@ exports.manageAdmin = async (req, res) => {
         const { targetUserId, action } = req.body;
 
         const group = await Conversation.findById(groupId);
+        if (!group) return res.status(404).json({ message: "Group not found" });
 
-        if (!group.groupAdmins.includes(req.user.id)) {
+        // FIX: Safe Admin Check
+        if (!group.groupAdmins.some(adminId => adminId.toString() === String(req.user.id))) {
             return res.status(403).json({ message: "Only admins can manage roles" });
         }
 
+        // Fetch Names
+        const admin = await User.findById(req.user.id);
+        const adminName = admin ? admin.name : "Admin";
+
+        const targetUser = await User.findById(targetUserId);
+        const targetName = targetUser ? targetUser.name : "A member";
+
         let updateQuery = {};
+        let actionText = "";
+
         if (action === 'promote') {
             updateQuery = { $addToSet: { groupAdmins: targetUserId } };
+            actionText = `made ${targetName} an admin`;
         } else if (action === 'demote') {
             if (group.groupAdmins.length === 1 && group.groupAdmins.includes(targetUserId)) {
                 return res.status(400).json({ message: "Cannot demote the only admin left" });
             }
             updateQuery = { $pull: { groupAdmins: targetUserId } };
+            actionText = `removed ${targetName} as admin`;
         }
 
-        const updatedGroup = await Conversation.findByIdAndUpdate(groupId, updateQuery, { new: true })
+        const updatedGroup = await Conversation.findByIdAndUpdate(groupId, updateQuery, { new: true });
+
+        // CREATE SYSTEM MESSAGE
+        const systemMessage = await Message.create({
+            conversation: groupId,
+            sender: req.user.id,
+            content: `${adminName} ${actionText}`,
+            isSystemMessage: true,
+            readBy: updatedGroup.participants
+        });
+
+        updatedGroup.lastMessage = systemMessage._id;
+        await updatedGroup.save();
+
+        const fullUpdatedGroup = await Conversation.findById(groupId)
             .populate("participants", "-password")
             .populate("groupAdmins", "-password");
 
-        res.status(200).json({ success: true, conversation: updatedGroup });
+        res.status(200).json({ success: true, conversation: fullUpdatedGroup });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
