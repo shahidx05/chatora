@@ -3,8 +3,8 @@ const http = require('node:http');
 const { Server } = require('socket.io');
 const app = require('./src/app');
 const connectDB = require('./src/config/db');
-const initSocket = require('./src/sockets/socket');
-const { setIO } = require('./sockets/socketRegistry');
+const initSocket = require('./src/sockets/index');
+const { setIO } = require('./src/sockets/socketRegistry');
 const port = process.env.PORT || 3000;
 
 const server = http.createServer(app);
@@ -17,8 +17,8 @@ const io = new Server(server, {
     }
 });
     
-setIO(io);
 connectDB();
+setIO(io);
 initSocket(io);
 
 server.listen(port, () => {

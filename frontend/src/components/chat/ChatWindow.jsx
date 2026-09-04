@@ -51,7 +51,7 @@ const ChatWindow = () => {
                 />
                 <MessageList messages={messages} isGroupChat={isGroupChat} />
                 <TypingIndicator typingData={isTyping} />
-                <ChatInput conversationId={conversationId} receiverId={selectedConversation._id} />
+                <ChatInput conversationId={conversationId} receiverId={isGroupChat ? null : selectedConversation._id} />
             </section>
 
             {/* Right Sidebar (Drawer) */}

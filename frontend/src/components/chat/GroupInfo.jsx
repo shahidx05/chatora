@@ -6,7 +6,7 @@ import AddMemberModal from './AddMemberModal';
 
 const GroupInfo = ({ conversation, onClose }) => {
     const { user: currentUser } = useAuth();
-    const { fetchConversations, closeConversation } = useChat();
+    const { fetchConversations, closeConversation, updateSpecificConversation } = useChat();
 
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(conversation.name || "");
@@ -22,12 +22,15 @@ const GroupInfo = ({ conversation, onClose }) => {
         if (!editName.trim()) return;
         setIsLoading(true);
         try {
-            await updateGroup(conversation.conversationId, {
+            const res = await updateGroup(conversation.conversationId, {
                 groupName: editName,
                 groupDescription: editDesc
             });
             setIsEditing(false);
-            fetchConversations(); // Refresh the UI
+            updateSpecificConversation(conversation.conversationId, {
+                name: res.conversation.groupName,
+                description: res.conversation.groupDescription
+            });
         } catch (error) {
             console.error("Failed to update group info", error);
         } finally {
@@ -49,8 +52,11 @@ const GroupInfo = ({ conversation, onClose }) => {
     const handleRemoveMember = async (userId) => {
         if (!window.confirm("Remove this member?")) return;
         try {
-            await removeMember(conversation.conversationId, userId);
-            fetchConversations();
+            const res = await removeMember(conversation.conversationId, userId);
+            updateSpecificConversation(conversation.conversationId, {
+                participants: res.conversation.participants,
+                groupAdmins: res.conversation.groupAdmins
+            });
         } catch (error) {
             console.error("Failed to remove member", error);
         }
@@ -59,8 +65,10 @@ const GroupInfo = ({ conversation, onClose }) => {
     const handleAdminToggle = async (userId, isCurrentlyAdmin) => {
         const action = isCurrentlyAdmin ? 'demote' : 'promote';
         try {
-            await manageAdmin(conversation.conversationId, userId, action);
-            fetchConversations();
+            const res = await manageAdmin(conversation.conversationId, userId, action);
+            updateSpecificConversation(conversation.conversationId, {
+                groupAdmins: res.conversation.groupAdmins
+            });
         } catch (error) {
             console.error("Failed to change admin role", error);
             alert(error.response?.data?.message || "Failed to update role");

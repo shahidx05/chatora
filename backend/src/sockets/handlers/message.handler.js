@@ -33,7 +33,6 @@ const registerMessageHandlers = (io, socket) => {
                 initialStatus = "delivered";
             }
         }
-
         const message = await Message.create({
             conversation: conversation._id,
             sender: senderId,
@@ -57,8 +56,10 @@ const registerMessageHandlers = (io, socket) => {
         const messagePayload = {
             _id: message._id,
             conversation: message.conversation,
-            sender: senderId,
-            senderName: socket.user.name,
+            sender: {
+                _id: senderId,
+                name: socket.user.name
+            },
             receiver: message.receiver,
             content: message.content,
             status: message.status,

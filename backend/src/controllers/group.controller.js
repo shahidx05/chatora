@@ -1,16 +1,41 @@
 const Conversation = require('../models/Conversation');
 const User = require("../models/User")
 const Message = require("../models/Message")
+const { getIO } = require('../sockets/socketRegistry');
+const { getSocketId } = require('../sockets/onlineUsers');
+
+const broadcastSystemMessage = (groupId, participants, systemMessage) => {
+    try {
+        const io = getIO();
+        participants.forEach(participant => {
+            const pId = participant._id ? participant._id.toString() : participant.toString();
+            const socketId = getSocketId(pId);
+            if (socketId) {
+                io.to(socketId).emit('receive_message', {
+                    _id: systemMessage._id,
+                    conversation: groupId,
+                    content: systemMessage.content,
+                    isSystemMessage: true,
+                    sender: systemMessage.sender,   
+                    createdAt: systemMessage.createdAt
+                });
+            }
+        });
+    } catch (error) {
+        console.error("Socket emit failed:", error.message);
+    }
+};
 
 exports.createGroup = async (req, res) => {
     try {
         const { groupName, participants } = req.body;
-
         if (!groupName || !participants || participants.length < 1) {
             return res.status(400).json({ message: "Group name and at least 1 other participant is required" });
         }
-
         const allParticipants = [...participants, req.user.id];
+
+        const currentUser = await User.findById(req.user.id);
+        const creatorName = currentUser ? currentUser.name : "A member";
 
         const groupChat = await Conversation.create({
             isGroup: true,
@@ -18,6 +43,20 @@ exports.createGroup = async (req, res) => {
             groupAdmins: [req.user.id],
             participants: allParticipants
         });
+
+        const systemMessage = await Message.create({
+            conversation: groupChat._id,
+            sender: req.user.id,
+            content: `${creatorName} created the group "${groupName}"`,
+            isSystemMessage: true,
+            readBy: [req.user.id]
+        });
+
+        groupChat.lastMessage = systemMessage._id;
+        await groupChat.save();
+        broadcastSystemMessage(groupChat._id, allParticipants, systemMessage);
+        await groupChat.populate("participants", "-password");
+        await groupChat.populate("groupAdmins", "-password");
 
         res.status(201).json({
             success: true,
@@ -48,14 +87,12 @@ exports.addMembers = async (req, res) => {
         if (!group) return res.status(404).json({ message: "Group not found" });
 
         if (!group.groupAdmins.some(adminId => adminId.toString() === String(req.user.id))) {
-            return res.status(403).json({ message: "Only admins can perform this action" });
+            return res.status(403).json({ message: "Only admins can add members" });
         }
 
         const updatedGroup = await Conversation.findByIdAndUpdate(
             groupId,
-            {
-                $addToSet: { participants: { $each: newMembers } }
-            },
+            { $addToSet: { participants: { $each: newMembers } } },
             { new: true }
         );
 
@@ -69,6 +106,7 @@ exports.addMembers = async (req, res) => {
 
         updatedGroup.lastMessage = systemMessage._id;
         await updatedGroup.save();
+        broadcastSystemMessage(groupId, updatedGroup.participants, systemMessage);
 
         const fullUpdatedGroup = await Conversation.findById(groupId)
             .populate("participants", "-password")
@@ -88,12 +126,10 @@ exports.removeMember = async (req, res) => {
         const group = await Conversation.findById(groupId);
         if (!group) return res.status(404).json({ message: "Group not found" });
 
-        // FIX: Safe Admin Check
         if (!group.groupAdmins.some(adminId => adminId.toString() === String(req.user.id))) {
-            return res.status(403).json({ message: "Only admins can perform this action" });
+            return res.status(403).json({ message: "Only admins can remove members" });
         }
 
-        // Fetch Names for System Message
         const admin = await User.findById(req.user.id);
         const adminName = admin ? admin.name : "Admin";
 
@@ -102,13 +138,10 @@ exports.removeMember = async (req, res) => {
 
         const updatedGroup = await Conversation.findByIdAndUpdate(
             groupId,
-            {
-                $pull: { participants: userIdToRemove, groupAdmins: userIdToRemove }
-            },
+            { $pull: { participants: userIdToRemove, groupAdmins: userIdToRemove } },
             { new: true }
-        );
+        )
 
-        // CREATE SYSTEM MESSAGE
         const systemMessage = await Message.create({
             conversation: groupId,
             sender: req.user.id,
@@ -120,11 +153,12 @@ exports.removeMember = async (req, res) => {
         updatedGroup.lastMessage = systemMessage._id;
         await updatedGroup.save();
 
-        const fullUpdatedGroup = await Conversation.findById(groupId)
-            .populate("participants", "-password")
-            .populate("groupAdmins", "-password");
+        broadcastSystemMessage(groupId, [...updatedGroup.participants, userIdToRemove], systemMessage);
 
-        res.status(200).json({ success: true, conversation: fullUpdatedGroup });
+        await updatedGroup.populate("participants", "-password");
+        await updatedGroup.populate("groupAdmins", "-password");
+
+        res.status(200).json({ success: true, conversation: updatedGroup });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -138,35 +172,44 @@ exports.updateGroup = async (req, res) => {
         const group = await Conversation.findById(groupId);
         if (!group) return res.status(404).json({ message: "Group not found" });
 
-        // FIX: Safe Admin Check
         if (!group.groupAdmins.some(adminId => adminId.toString() === String(req.user.id))) {
             return res.status(403).json({ message: "Only admins can update group info" });
         }
 
-        // Fetch Admin Name
         const admin = await User.findById(req.user.id);
         const adminName = admin ? admin.name : "Admin";
 
-        // Logic to determine what exactly changed for the message
-        let actionText = "changed the group info";
-        if (groupName && groupDescription !== undefined) actionText = `changed the group name to "${groupName}" and updated description`;
-        else if (groupName) actionText = `changed the group name to "${groupName}"`;
-        else if (groupDescription !== undefined) actionText = `changed the group description`;
+        const oldName = group.groupName;
+        const oldDesc = group.groupDescription;
 
         if (groupName) group.groupName = groupName;
         if (groupDescription !== undefined) group.groupDescription = groupDescription;
-
-        // CREATE SYSTEM MESSAGE
-        const systemMessage = await Message.create({
-            conversation: groupId,
-            sender: req.user.id,
-            content: `${adminName} ${actionText}`,
-            isSystemMessage: true,
-            readBy: group.participants
-        });
-
-        group.lastMessage = systemMessage._id;
         await group.save();
+
+        // FIX 2: Check for both name and description changes
+        let systemMessage = null;
+        let actionText = "";
+
+        if (groupName && groupName !== oldName && groupDescription !== undefined && groupDescription !== oldDesc) {
+            actionText = `changed the group name to "${groupName}" and updated description`;
+        } else if (groupName && groupName !== oldName) {
+            actionText = `changed the group name to "${groupName}"`;
+        } else if (groupDescription !== undefined && groupDescription !== oldDesc) {
+            actionText = `changed the group description`;
+        }
+
+        if (actionText) {
+            systemMessage = await Message.create({
+                conversation: groupId,
+                sender: req.user.id,
+                content: `${adminName} ${actionText}`,
+                isSystemMessage: true,
+                readBy: group.participants
+            });
+            group.lastMessage = systemMessage._id;
+            await group.save();
+            broadcastSystemMessage(groupId, group.participants, systemMessage);
+        }
 
         const updatedGroup = await Conversation.findById(groupId)
             .populate("participants", "-password")
@@ -186,51 +229,49 @@ exports.manageAdmin = async (req, res) => {
         const group = await Conversation.findById(groupId);
         if (!group) return res.status(404).json({ message: "Group not found" });
 
-        // FIX: Safe Admin Check
+        if (!group.participants.some(p => p.toString() === String(targetUserId))) {
+            return res.status(400).json({ message: "User is not a participant in this group" });
+        }
+
         if (!group.groupAdmins.some(adminId => adminId.toString() === String(req.user.id))) {
             return res.status(403).json({ message: "Only admins can manage roles" });
         }
 
-        // Fetch Names
         const admin = await User.findById(req.user.id);
         const adminName = admin ? admin.name : "Admin";
 
-        const targetUser = await User.findById(targetUserId);
-        const targetName = targetUser ? targetUser.name : "A member";
-
         let updateQuery = {};
-        let actionText = "";
-
         if (action === 'promote') {
             updateQuery = { $addToSet: { groupAdmins: targetUserId } };
-            actionText = `made ${targetName} an admin`;
         } else if (action === 'demote') {
-            if (group.groupAdmins.length === 1 && group.groupAdmins.includes(targetUserId)) {
+            if (group.groupAdmins.length === 1 && group.groupAdmins.some(id => id.toString() === String(targetUserId))) {
                 return res.status(400).json({ message: "Cannot demote the only admin left" });
             }
             updateQuery = { $pull: { groupAdmins: targetUserId } };
-            actionText = `removed ${targetName} as admin`;
         }
 
-        const updatedGroup = await Conversation.findByIdAndUpdate(groupId, updateQuery, { new: true });
+        const updatedGroup = await Conversation.findByIdAndUpdate(groupId, updateQuery, { new: true })
 
-        // CREATE SYSTEM MESSAGE
+        const targetUser = await User.findById(targetUserId);
+
         const systemMessage = await Message.create({
             conversation: groupId,
             sender: req.user.id,
-            content: `${adminName} ${actionText}`,
+            content: action === 'promote'
+                ? `${adminName} made ${targetUser?.name} an admin`
+                : `${adminName} removed ${targetUser?.name} as admin`,
             isSystemMessage: true,
             readBy: updatedGroup.participants
         });
 
         updatedGroup.lastMessage = systemMessage._id;
         await updatedGroup.save();
+        broadcastSystemMessage(groupId, updatedGroup.participants, systemMessage);
 
-        const fullUpdatedGroup = await Conversation.findById(groupId)
-            .populate("participants", "-password")
-            .populate("groupAdmins", "-password");
+        await updatedGroup.populate("participants", "-password");
+        await updatedGroup.populate("groupAdmins", "-password");
 
-        res.status(200).json({ success: true, conversation: fullUpdatedGroup });
+        res.status(200).json({ success: true, conversation: updatedGroup });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -270,6 +311,8 @@ exports.leaveGroup = async (req, res) => {
 
         group.lastMessage = systemMessage._id;
         await group.save();
+
+        broadcastSystemMessage(groupId, [...group.participants, userId], systemMessage);
 
         const updatedGroup = await Conversation.findById(groupId)
             .populate("participants", "-password")

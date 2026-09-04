@@ -65,31 +65,39 @@ export const ChatProvider = ({ children }) => {
         )?._id
 
         const receiveHandler = (data) => {
+            console.log("Received message:", data);
             const existingConv = conversationsRef.current.find(c => String(c.conversationId) === String(data.conversation));
-            const isIncoming = String(data.sender) !== String(currentUser.id);
-            const isPendingChat = location.pathname.includes('/chat/new/');
 
-            let isActive = String(data.conversation) === String(activeConversationId)
+            const senderId = data.sender?._id || data.sender;
+            const myId = currentUser?.id || currentUser?._id;
+ 
+            const isIncoming = String(senderId) !== String(myId);
+            const isPendingChat = location.pathname.includes('/chat/new/');;
 
-            if (isIncoming && !existingConv) {
+            let isActive = String(data.conversation) === String(activeConversationId);
+
+            if (isIncoming && !existingConv && !data.isSystemMessage) {
                 navigate(`/chat/${data.conversation}`, { replace: true });
                 setActiveConversationId(data.conversation);
                 isActive = true;
             }
 
-            if (!existingConv) {
+            if (!existingConv || data.isSystemMessage) {
                 fetchConversations();
-            }
-            else {
+            } else {
                 updateConversation(data, isIncoming && !isActive);
             }
 
 
             if (isActive || isPendingChat) {
                 setMessages(prev => [...prev, data])
-                if (isIncoming) {
-                    socket.current.emit('mark_seen', { conversationId: activeConversationId })
+                if (isIncoming && !data.isSystemMessage) {
+                    socket.current.emit('mark_seen', { conversationId: activeConversationId });
                 }
+            }
+
+            if (data.isSystemMessage) {
+                fetchConversations();
             }
         }
 
@@ -209,7 +217,6 @@ export const ChatProvider = ({ children }) => {
 
         try {
             const data = await getConversations()
-            console.log(data)
             const result = data.conversations.map((conv) => {
                 const chatName = conv.isGroupChat ? conv.groupName : conv.participant?.name;
                 const participantId = conv.isGroupChat ? null : conv.participant?._id;
@@ -341,6 +348,17 @@ export const ChatProvider = ({ children }) => {
         }, 1000)
     }
 
+    // --- update specific conversation metadata instantly ---
+    const updateSpecificConversation = useCallback((conversationId, updatedData) => {
+        setConversations(prev =>
+            prev.map(conv =>
+                conv.conversationId === conversationId
+                    ? { ...conv, ...updatedData }
+                    : conv
+            )
+        );
+    }, []);
+
     const value = {
         conversations,
         activeConversationId,
@@ -351,7 +369,8 @@ export const ChatProvider = ({ children }) => {
         closeConversation,
         sendMessage,
         handleTyping,
-        fetchConversations
+        fetchConversations,
+        updateSpecificConversation
     }
 
     return (

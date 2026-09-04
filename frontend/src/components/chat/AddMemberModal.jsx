@@ -4,7 +4,7 @@ import { addMembers } from '../../services/group.service';
 import { useChat } from '../../context/ChatContext';
 
 const AddMemberModal = ({ isOpen, onClose, conversation }) => {
-    const { fetchConversations } = useChat();
+    const { fetchConversations, updateSpecificConversation } = useChat();
     
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
@@ -62,11 +62,11 @@ const AddMemberModal = ({ isOpen, onClose, conversation }) => {
         setIsLoading(true);
         try {
             const newMemberIds = selectedUsers.map(user => user._id);
-            // Yahan backend ki addMembers API call ho rahi hai
-            await addMembers(conversation.conversationId, newMemberIds);
-            
-            await fetchConversations(); // Sidebar aur Group Info dono update ho jayenge
-            onClose(); // Modal band kar do
+            const res = await addMembers(conversation.conversationId, newMemberIds);
+            updateSpecificConversation(conversation.conversationId, {
+                participants: res.conversation.participants
+            });
+            onClose(); 
         } catch (error) {
             console.error("Failed to add members", error);
             alert(error.response?.data?.message || "Failed to add members");
