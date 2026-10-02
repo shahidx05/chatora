@@ -28,8 +28,8 @@ const initSocket = (io) => {
         }
     });
 
-    io.on('connection', (socket) => {
-        registerPresenceHandlers(io, socket);
+    io.on('connection', async (socket) => {
+        await registerPresenceHandlers(io, socket);
         registerMessageHandlers(io, socket);
         registerTypingHandlers(io, socket);
     });
