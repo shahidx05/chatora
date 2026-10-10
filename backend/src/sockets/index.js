@@ -5,7 +5,7 @@ const registerMessageHandlers = require('./handlers/message.handler');
 const registerTypingHandlers = require('./handlers/typing.handler');
 
 const initSocket = (io) => {
-     // middleware: runs before every connection is accepted
+    // middleware: runs before every connection is accepted
     io.use(async (socket, next) => {
         try {
             const token = socket.handshake.auth?.token;
@@ -28,13 +28,11 @@ const initSocket = (io) => {
         }
     });
 
-    io.on('connection', async (socket) => {
-        await registerPresenceHandlers(io, socket);
+    io.on('connection', (socket) => {
         registerMessageHandlers(io, socket);
         registerTypingHandlers(io, socket);
-
-        const all = await io.fetchSockets();
-        console.log('Sockets across ALL servers:', all.length);
+        registerPresenceHandlers(io, socket).catch(err =>
+            console.error('presence setup failed:', err.message));
     });
 };
 

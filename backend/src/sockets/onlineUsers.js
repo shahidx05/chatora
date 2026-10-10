@@ -15,29 +15,53 @@
 
 const redis = require('../config/redis'); // ----------new code use redis for online users
 
-const PRESENCE_PREFIX = 'presence:'; // presence:<userId> -> socketId
+const SOCKETS_PREFIX = 'sockets:';   // sockets:<userId> -> Set of socketIds
+const ONLINE_SET = 'online_users';   // Set of userIds
+const TTL_SECONDS = 60;
 
 const setOnline = async (userId, socketId) => {
-    await redis.set(`${PRESENCE_PREFIX}${userId}`, socketId);
+    const key = `${SOCKETS_PREFIX}${userId}`;
+    await redis.sadd(key, socketId);
+    await redis.expire(key, TTL_SECONDS);
+    await redis.sadd(ONLINE_SET, userId);
 };
 
-const setOffline = async (userId) => {
-    await redis.del(`${PRESENCE_PREFIX}${userId}`);
+// heartbeat: TTL dobara 60s kar do
+const refreshOnline = async (userId, socketId) => {
+    const key = `${SOCKETS_PREFIX}${userId}`;
+    const refreshed = await redis.expire(key, TTL_SECONDS);
+    if (!refreshed) await setOnline(userId, socketId);
 };
 
-const getSocketId = async (userId) => {
-    return await redis.get(`${PRESENCE_PREFIX}${userId}`);
+// returns true agar ye last socket tha (user ab poori tarah offline)
+const removeSocket = async (userId, socketId) => {
+    const key = `${SOCKETS_PREFIX}${userId}`;
+    await redis.srem(key, socketId);
+    const remaining = await redis.scard(key);
+    if (remaining === 0) {
+        await redis.srem(ONLINE_SET, userId);
+        return true;
+    }
+    return false;
 };
 
-const isOnline = async (userId) => {
-    const exists = await redis.exists(`${PRESENCE_PREFIX}${userId}`);
-    return exists === 1;
-};
+const getSocketIds = async (userId) => redis.smembers(`${SOCKETS_PREFIX}${userId}`);
+
+const isOnline = async (userId) =>
+    (await redis.scard(`${SOCKETS_PREFIX}${userId}`)) > 0;
 
 const getAllOnlineUserIds = async () => {
-    const keys = await redis.keys(`${PRESENCE_PREFIX}*`);
-    return keys.map(key => key.replace(PRESENCE_PREFIX, ''));
+    const ids = await redis.smembers(ONLINE_SET);
+    if (ids.length === 0) return [];
+
+    const pipeline = redis.pipeline();
+    ids.forEach(id => pipeline.exists(`${SOCKETS_PREFIX}${id}`));
+    const results = await pipeline.exec();
+
+    const alive = [], stale = [];
+    ids.forEach((id, i) => (results[i][1] === 1 ? alive : stale).push(id));
+    if (stale.length) await redis.srem(ONLINE_SET, ...stale);
+    return alive;
 };
 
-
-module.exports = { setOnline, setOffline, getSocketId, isOnline, getAllOnlineUserIds };
+module.exports = { setOnline, refreshOnline, removeSocket, getSocketIds, isOnline, getAllOnlineUserIds };

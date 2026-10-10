@@ -1,35 +1,30 @@
 const Conversation = require('../../models/Conversation');
-const { getSocketId } = require('../onlineUsers');
 
 const registerTypingHandlers = (io, socket) => {
     socket.on('typing', async (data) => {
-        if (data.conversationId) {
-            const conversation = await Conversation.findById(data.conversationId);
-            if (!conversation) return;
+        try {
+            const myId = socket.user._id;
+            const payload = {
+                sender: myId,
+                senderName: socket.user.name,
+                conversationId: data?.conversationId,
+                typing: data?.typing
+            };
 
-            for (const participantId of conversation.participants) {
-                if (participantId.toString() !== socket.user._id.toString()) {
-                    const participantSocketId = await getSocketId(participantId.toString());
-                    if (participantSocketId) {
-                        io.to(participantSocketId).emit('typing', {
-                            sender: socket.user._id,
-                            senderName: socket.user.name,
-                            conversationId: data.conversationId,
-                            typing: data.typing
-                        });
+            if (data?.conversationId) {
+                const conversation = await Conversation.findById(data.conversationId);
+                if (!conversation || !conversation.participants.some(p => p.equals(myId))) return;
+
+                for (const participantId of conversation.participants) {
+                    if (!participantId.equals(myId)) {
+                        io.to(participantId.toString()).emit('typing', payload);
                     }
                 }
+            } else if (data?.receiver) {
+                io.to(data.receiver.toString()).emit('typing', payload);
             }
-        } else if (data.receiver) {
-            const receiverSocket = await getSocketId(data.receiver);   // ADDED await
-            if (receiverSocket) {
-                io.to(receiverSocket).emit('typing', {
-                    sender: socket.user._id,
-                    senderName: socket.user.name,
-                    conversationId: data.conversationId,
-                    typing: data.typing
-                });
-            }
+        } catch (err) {
+            console.error('typing failed:', err.message);
         }
     });
 };

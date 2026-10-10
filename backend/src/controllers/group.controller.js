@@ -2,25 +2,21 @@ const Conversation = require('../models/Conversation');
 const User = require("../models/User")
 const Message = require("../models/Message")
 const { getIO } = require('../sockets/socketRegistry');
-const { getSocketId } = require('../sockets/onlineUsers');
 
 const broadcastSystemMessage = (groupId, participants, systemMessage) => {
     try {
         const io = getIO();
-        for (const participant of participants) {   
-                        const pId = participant._id ? participant._id.toString() : participant.toString();
-            const socketId = getSocketId(pId);
-            if (socketId) {
-                io.to(socketId).emit('receive_message', {
-                    _id: systemMessage._id,
-                    conversation: groupId,
-                    content: systemMessage.content,
-                    isSystemMessage: true,
-                    sender: systemMessage.sender,
-                    createdAt: systemMessage.createdAt
-                });
-            }
-        }
+        participants.forEach(p => {
+            const id = p?._id ? p._id.toString() : p.toString();
+            io.to(id).emit('receive_message', {
+                _id: systemMessage._id,
+                conversation: groupId,
+                content: systemMessage.content,
+                isSystemMessage: true,
+                sender: systemMessage.sender,
+                createdAt: systemMessage.createdAt
+            });
+        });
     } catch (error) {
         console.error("Socket emit failed:", error.message);
     }
