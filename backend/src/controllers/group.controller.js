@@ -7,8 +7,8 @@ const { getSocketId } = require('../sockets/onlineUsers');
 const broadcastSystemMessage = (groupId, participants, systemMessage) => {
     try {
         const io = getIO();
-        participants.forEach(participant => {
-            const pId = participant._id ? participant._id.toString() : participant.toString();
+        for (const participant of participants) {   
+                        const pId = participant._id ? participant._id.toString() : participant.toString();
             const socketId = getSocketId(pId);
             if (socketId) {
                 io.to(socketId).emit('receive_message', {
@@ -16,11 +16,11 @@ const broadcastSystemMessage = (groupId, participants, systemMessage) => {
                     conversation: groupId,
                     content: systemMessage.content,
                     isSystemMessage: true,
-                    sender: systemMessage.sender,   
+                    sender: systemMessage.sender,
                     createdAt: systemMessage.createdAt
                 });
             }
-        });
+        }
     } catch (error) {
         console.error("Socket emit failed:", error.message);
     }

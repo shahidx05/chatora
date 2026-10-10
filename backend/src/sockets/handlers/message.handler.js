@@ -29,10 +29,11 @@ const registerMessageHandlers = (io, socket) => {
         let otherUserId = null;
         if (!conversation.isGroup) {
             otherUserId = conversation.participants.find(p => p.toString() !== senderId.toString());
-            if (otherUserId && isOnline(otherUserId.toString())) {
+            if (otherUserId && await isOnline(otherUserId.toString())) { 
                 initialStatus = "delivered";
             }
         }
+
         const message = await Message.create({
             conversation: conversation._id,
             sender: senderId,
@@ -67,15 +68,15 @@ const registerMessageHandlers = (io, socket) => {
             createdAt: message.createdAt
         };
 
-        conversation.participants.forEach(participantId => {
-            const participantSocketId = getSocketId(participantId.toString());
+        for (const participantId of conversation.participants) {
+            const participantSocketId = await getSocketId(participantId.toString());
             if (participantSocketId) {
                 io.to(participantSocketId).emit('receive_message', messagePayload);
             }
-        });
+        }
 
         if (!conversation.isGroup && otherUserId) {
-            const otherSocketId = getSocketId(otherUserId.toString());
+            const otherSocketId = await getSocketId(otherUserId.toString());   // ADDED await
             if (otherSocketId && initialStatus === "delivered") {
                 io.to(otherSocketId).emit('message_status_updated', {
                     messageId: message._id,
@@ -99,9 +100,9 @@ const registerMessageHandlers = (io, socket) => {
             { $addToSet: { readBy: userId }, $set: { status: "seen" } }
         );
 
-        conversation.participants.forEach(participantId => {
+        for (const participantId of conversation.participants) {
             if (participantId.toString() !== userId.toString()) {
-                const participantSocketId = getSocketId(participantId.toString());
+                const participantSocketId = await getSocketId(participantId.toString());
                 if (participantSocketId) {
                     io.to(participantSocketId).emit('messages_seen', {
                         conversationId,
@@ -110,7 +111,7 @@ const registerMessageHandlers = (io, socket) => {
                     });
                 }
             }
-        });
+        }
     });
 };
 

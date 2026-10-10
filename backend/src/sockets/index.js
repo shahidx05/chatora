@@ -32,6 +32,9 @@ const initSocket = (io) => {
         await registerPresenceHandlers(io, socket);
         registerMessageHandlers(io, socket);
         registerTypingHandlers(io, socket);
+
+        const all = await io.fetchSockets();
+        console.log('Sockets across ALL servers:', all.length);
     });
 };
 

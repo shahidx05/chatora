@@ -7,9 +7,9 @@ const registerTypingHandlers = (io, socket) => {
             const conversation = await Conversation.findById(data.conversationId);
             if (!conversation) return;
 
-            conversation.participants.forEach(participantId => {
+            for (const participantId of conversation.participants) {
                 if (participantId.toString() !== socket.user._id.toString()) {
-                    const participantSocketId = getSocketId(participantId.toString());
+                    const participantSocketId = await getSocketId(participantId.toString());
                     if (participantSocketId) {
                         io.to(participantSocketId).emit('typing', {
                             sender: socket.user._id,
@@ -19,9 +19,9 @@ const registerTypingHandlers = (io, socket) => {
                         });
                     }
                 }
-            });
+            }
         } else if (data.receiver) {
-            const receiverSocket = getSocketId(data.receiver);
+            const receiverSocket = await getSocketId(data.receiver);   // ADDED await
             if (receiverSocket) {
                 io.to(receiverSocket).emit('typing', {
                     sender: socket.user._id,

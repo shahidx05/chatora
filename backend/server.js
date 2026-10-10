@@ -5,6 +5,8 @@ const app = require('./src/app');
 const connectDB = require('./src/config/db');
 const initSocket = require('./src/sockets/index');
 const { setIO } = require('./src/sockets/socketRegistry');
+const { createAdapter } = require('@socket.io/redis-adapter');
+const redis = require('./src/config/redis');
 const port = process.env.PORT || 3000;
 
 const server = http.createServer(app);
@@ -16,6 +18,11 @@ const io = new Server(server, {
         credentials: true
     }
 });
+
+const pubClient = redis.duplicate();  
+const subClient = redis.duplicate();
+
+io.adapter(createAdapter(pubClient, subClient));
     
 connectDB();
 setIO(io);
