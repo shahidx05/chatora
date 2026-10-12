@@ -11,7 +11,7 @@ const ChatWindow = () => {
     const { conversationId, userId } = useParams()
     const location = useLocation()
     const navigate = useNavigate()
-    const { conversations, openConversation, closeConversation, messages, isTyping } = useChat()
+    const { conversations, openConversation, closeConversation, messages, isTyping, hasMore, loadingOlder, loadOlderMessages } = useChat()
 
     const [showGroupInfo, setShowGroupInfo] = useState(false);
 
@@ -49,7 +49,13 @@ const ChatWindow = () => {
                     conversation={selectedConversation}
                     onInfoClick={() => setShowGroupInfo(!showGroupInfo)}
                 />
-                <MessageList messages={messages} isGroupChat={isGroupChat} />
+                <MessageList
+                    messages={messages}
+                    isGroupChat={isGroupChat}
+                    hasMore={hasMore}
+                    loadingOlder={loadingOlder}
+                    onLoadOlder={loadOlderMessages}
+                />
                 <TypingIndicator typingData={isTyping} />
                 <ChatInput conversationId={conversationId} receiverId={isGroupChat ? null : selectedConversation._id} />
             </section>

@@ -21,6 +21,10 @@ export const ChatProvider = ({ children }) => {
     const [messages, setMessages] = useState([])
     const [isTyping, setIsTyping] = useState(false)
     const [onlineUserIds, setOnlineUserIds] = useState([])
+    const [hasMore, setHasMore] = useState(false)
+    const [loadingOlder, setLoadingOlder] = useState(false)
+    const activeIdRef = useRef(null)        
+    const loadingOlderRef = useRef(false)  
 
     const socket = useRef(null)
     const typingTimeout = useRef(null)
@@ -255,13 +259,17 @@ export const ChatProvider = ({ children }) => {
     const openConversation = async (conversationId) => {
         // If it's a pending chat (no ID yet), just setup empty state and exit
         if (!conversationId) {
+            activeIdRef.current = null
             setActiveConversationId(null)
             setMessages([])
+            setHasMore(false)
             setIsTyping(false)
             return;
         }
 
+        activeIdRef.current = conversationId
         setActiveConversationId(conversationId)
+        setHasMore(false)
         setIsTyping(false)
 
         setConversations(prev =>
@@ -274,7 +282,9 @@ export const ChatProvider = ({ children }) => {
 
         try {
             const data = await getMessages(conversationId)
+            if (activeIdRef.current !== conversationId) return // user switched chats meanwhile
             setMessages(data.messages)
+            setHasMore(Boolean(data.hasMore))
         } catch (error) {
             console.error('Error fetching messages:', error)
         }
@@ -283,9 +293,36 @@ export const ChatProvider = ({ children }) => {
     }
 
     const closeConversation = () => {
+        activeIdRef.current = null
         setActiveConversationId(null)
         setMessages([])
+        setHasMore(false)
         setIsTyping(false)
+    }
+
+    // --- infinite scroll: load the page of messages older than `beforeId` ---
+    const loadOlderMessages = async (beforeId) => {
+        const conversationId = activeIdRef.current
+        if (!conversationId || !beforeId || loadingOlderRef.current) return
+
+        loadingOlderRef.current = true
+        setLoadingOlder(true)
+        try {
+            const data = await getMessages(conversationId, { before: beforeId })
+            if (activeIdRef.current !== conversationId) return // switched chats while loading
+
+            setMessages(prev => {
+                // skip anything already in the list (e.g. a live message that raced the fetch)
+                const existing = new Set(prev.map(m => String(m._id)))
+                return [...data.messages.filter(m => !existing.has(String(m._id))), ...prev]
+            })
+            setHasMore(Boolean(data.hasMore))
+        } catch (error) {
+            console.error('Error loading older messages:', error)
+        } finally {
+            loadingOlderRef.current = false
+            setLoadingOlder(false)
+        }
     }
 
     // --- update conversations ---
@@ -376,10 +413,13 @@ export const ChatProvider = ({ children }) => {
         conversations,
         activeConversationId,
         messages,
+        hasMore,
+        loadingOlder,
         isTyping,
         currentUser,
         openConversation,
         closeConversation,
+        loadOlderMessages,
         sendMessage,
         handleTyping,
         fetchConversations,
