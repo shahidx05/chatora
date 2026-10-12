@@ -5,6 +5,7 @@ const userRoutes = require('./routes/user.routes');
 const messageRoutes = require('./routes/message.routes');
 const conversationRoutes = require('./routes/conversation.routes');
 const groupRoutes = require('./routes/group.routes');
+const uploadRoutes = require('./routes/upload.routes');
 const app = express()
 
 app.use(cors({origin: process.env.CLIENT_URL,credentials: true}));
@@ -15,6 +16,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/groups', groupRoutes);
+app.use('/api/uploads', uploadRoutes);
 
 app.get('/', (req, res) => {
     res.send('Hello World!')

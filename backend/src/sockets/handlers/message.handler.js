@@ -1,16 +1,25 @@
 const Message = require('../../models/Message');
 const Conversation = require('../../models/Conversation');
 const { isOnline } = require('../onlineUsers');
+const { verifyAttachment } = require('../../services/attachment.service');
 
 const isParticipant = (conversation, userId) =>
     conversation.participants.some(p => p.equals(userId));
 
 const registerMessageHandlers = (io, socket) => {
-    socket.on('send_message', async (data) => {
+    // data: { receiver?, conversationId?, message?, attachment?, clientMsgId? }
+    // cb:   ack -> { ok: true, message } | { ok: false, error }
+    socket.on('send_message', async (data, cb) => {
+        const ack = typeof cb === 'function' ? cb : () => {};
+
         try {
             const senderId = socket.user._id;
-            const content = typeof data?.message === 'string' ? data.message.trim() : '';
-            if (!content || content.length > 5000) return;
+            const caption = typeof data?.message === 'string' ? data.message.trim() : '';
+            const clientMsgId = typeof data?.clientMsgId === 'string'
+                ? data.clientMsgId.slice(0, 64) : undefined;
+
+            if (caption.length > 5000) return ack({ ok: false, error: 'Message too long' });
+            if (!caption && !data?.attachment) return ack({ ok: false, error: 'Empty message' });
 
             let conversation;
             if (data.conversationId) {
@@ -29,7 +38,26 @@ const registerMessageHandlers = (io, socket) => {
                 }
             }
 
-            if (!conversation || !isParticipant(conversation, senderId)) return;
+            if (!conversation || !isParticipant(conversation, senderId)) {
+                return ack({ ok: false, error: 'Not allowed' });
+            }
+
+            // retry of a message we already stored -> return it, don't duplicate
+            if (clientMsgId) {
+                const existing = await Message.findOne({ sender: senderId, clientMsgId });
+                if (existing) return ack({ ok: true, duplicate: true, message: existing });
+            }
+
+            // attachments: verify with Cloudinary, never trust client metadata
+            let type = 'text';
+            let attachment;
+            if (data.attachment) {
+                attachment = await verifyAttachment(data.attachment, conversation._id);
+                type = attachment.resourceType === 'image' ? 'image' : 'file';
+            }
+
+            const content = caption ||
+                (type === 'image' ? '📷 Photo' : type === 'file' ? `📎 ${attachment.originalName}` : '');
 
             let initialStatus = "sent";
             let otherUserId = null;
@@ -40,14 +68,28 @@ const registerMessageHandlers = (io, socket) => {
                 }
             }
 
-            const message = await Message.create({
-                conversation: conversation._id,
-                sender: senderId,
-                receiver: data.receiver || null,
-                content,
-                status: initialStatus,
-                readBy: [senderId]
-            });
+            let message;
+            try {
+                message = await Message.create({
+                    conversation: conversation._id,
+                    sender: senderId,
+                    receiver: data.receiver || null,
+                    content,
+                    type,
+                    caption: type === 'text' ? '' : caption,
+                    attachment,
+                    clientMsgId,
+                    status: initialStatus,
+                    readBy: [senderId]
+                });
+            } catch (err) {
+                // two retries racing each other: unique index caught the second one
+                if (err.code === 11000 && clientMsgId) {
+                    const existing = await Message.findOne({ sender: senderId, clientMsgId });
+                    if (existing) return ack({ ok: true, duplicate: true, message: existing });
+                }
+                throw err;
+            }
 
             // atomic update: no lost counts when messages arrive together
             const update = { $set: { lastMessage: message._id } };
@@ -64,6 +106,10 @@ const registerMessageHandlers = (io, socket) => {
                 sender: { _id: senderId, name: socket.user.name },
                 receiver: message.receiver,
                 content: message.content,
+                type: message.type,
+                caption: message.caption,
+                attachment: message.attachment,
+                clientMsgId: message.clientMsgId,
                 status: message.status,
                 readBy: message.readBy,
                 createdAt: message.createdAt
@@ -80,8 +126,11 @@ const registerMessageHandlers = (io, socket) => {
                     status: "delivered"
                 });
             }
+
+            ack({ ok: true, message: messagePayload });
         } catch (err) {
             console.error('send_message failed:', err.message);
+            ack({ ok: false, error: err.expose ? err.message : 'Failed to send message' });
         }
     });
 

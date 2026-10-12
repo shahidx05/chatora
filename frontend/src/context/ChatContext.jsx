@@ -321,16 +321,29 @@ export const ChatProvider = ({ children }) => {
         });
     }, []);
     // --- send a message ---
-    const sendMessage = (text, conversationId, receiverId) => {
-        if (!text.trim() || !socket.current) return
+    // returns a Promise<{ ok, message?, error? }> that resolves when the server acks
+    const sendMessage = (text, conversationId, receiverId, attachment = null) => {
+        if ((!text.trim() && !attachment) || !socket.current) {
+            return Promise.resolve({ ok: false, error: 'Not connected' })
+        }
 
-        socket.current.emit('send_message', {
-            receiver: receiverId,
-            conversationId,
-            message: text
+        // same id on every retry -> server stores the message only once
+        const clientMsgId = crypto.randomUUID()
+
+        return new Promise((resolve) => {
+            socket.current.timeout(15000).emit('send_message', {
+                receiver: receiverId,
+                conversationId,
+                message: text,
+                attachment,
+                clientMsgId
+            }, (err, res) => {
+                if (err) return resolve({ ok: false, error: 'Server did not respond, try again' })
+                resolve(res)
+            })
+
+            socket.current.emit('typing', { receiver: receiverId, typing: false })
         })
-
-        socket.current.emit('typing', { receiver: receiverId, typing: false })
     }
 
     // --- typing debounce ---
