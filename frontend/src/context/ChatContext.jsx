@@ -23,8 +23,8 @@ export const ChatProvider = ({ children }) => {
     const [onlineUserIds, setOnlineUserIds] = useState([])
     const [hasMore, setHasMore] = useState(false)
     const [loadingOlder, setLoadingOlder] = useState(false)
-    const activeIdRef = useRef(null)        
-    const loadingOlderRef = useRef(false)  
+    const activeIdRef = useRef(null)        // which chat is open right now (for stale-response checks)
+    const loadingOlderRef = useRef(false)   // blocks double fetches from rapid scroll events
 
     const socket = useRef(null)
     const typingTimeout = useRef(null)
@@ -53,7 +53,7 @@ export const ChatProvider = ({ children }) => {
     }, [token])
 
     useEffect(() => {
-        if (conversations.length === 0 || onlineUserIds.length === 0) return
+        if (conversations.length === 0) return
         setConversations(prev =>
             prev.map(conv => ({ ...conv, online: onlineUserIds.includes(conv._id) }))
         )
@@ -130,6 +130,7 @@ export const ChatProvider = ({ children }) => {
         }
 
         const onlineHandler = (data) => {
+            setOnlineUserIds(prev => prev.includes(data.userId) ? prev : [...prev, data.userId])
             setConversations(prev =>
                 prev.map(conv =>
                     conv._id === data.userId ? { ...conv, online: true, lastSeen: null } : conv
@@ -138,6 +139,7 @@ export const ChatProvider = ({ children }) => {
         }
 
         const offlineHandler = (data) => {
+            setOnlineUserIds(prev => prev.filter(id => id !== data.userId))
             setConversations(prev =>
                 prev.map(conv =>
                     conv._id === data.userId ? { ...conv, online: false, lastSeen: data.lastSeen } : conv
@@ -162,37 +164,28 @@ export const ChatProvider = ({ children }) => {
         //         )
         //     );
         // }
-        // handles single-message "delivered" updates (1-1 chats only)
-        const deliveredHandler = (data) => {
-            setMessages(prev =>
-                prev.map(msg =>
-                    String(msg._id) === String(data.messageId) ? { ...msg, status: data.status } : msg
-                )
-            )
-            setConversations(prev =>
-                prev.map(conv =>
-                    conv.lastMessageId === data.messageId
-                        ? { ...conv, lastMessageStatus: data.status }
-                        : conv
-                )
-            )
-        }
+        // receipts for MY messages: { conversationId, updates: [{ messageId, status, deliveredCount, readCount, recipientCount }] }
+        const receiptsHandler = ({ conversationId, updates }) => {
+            const byId = new Map(updates.map(u => [String(u.messageId), u]))
 
-        // handles batch "seen" updates (fires when someone opens the conversation)
-        const seenHandler = (data) => {
             setMessages(prev =>
-                prev.map(msg =>
-                    String(msg.conversation) === String(data.conversationId)
-                        ? { ...msg, status: 'seen' }
-                        : msg
-                )
+                prev.map(msg => {
+                    const u = byId.get(String(msg._id))
+                    return u ? {
+                        ...msg,
+                        status: u.status,
+                        deliveredCount: u.deliveredCount,
+                        readCount: u.readCount,
+                        recipientCount: u.recipientCount
+                    } : msg
+                })
             )
             setConversations(prev =>
-                prev.map(conv =>
-                    conv.conversationId === data.conversationId
-                        ? { ...conv, lastMessageStatus: 'seen' }
-                        : conv
-                )
+                prev.map(conv => {
+                    if (String(conv.conversationId) !== String(conversationId)) return conv
+                    const u = byId.get(String(conv.lastMessageId))
+                    return u ? { ...conv, lastMessageStatus: u.status } : conv
+                })
             )
         }
 
@@ -201,8 +194,7 @@ export const ChatProvider = ({ children }) => {
         socket.current.on("user_online", onlineHandler)
         socket.current.on("user_offline", offlineHandler)
         // socket.current.on("message_status_updated", statusHandler)
-        socket.current.on("message_status_updated", deliveredHandler)
-        socket.current.on("messages_seen", seenHandler)
+        socket.current.on("message_receipts", receiptsHandler)
 
         return () => {
             socket.current.off("receive_message", receiveHandler)
@@ -210,8 +202,7 @@ export const ChatProvider = ({ children }) => {
             socket.current.off("user_online", onlineHandler)
             socket.current.off("user_offline", offlineHandler)
             // socket.current.off("message_status_updated", statusHandler)
-            socket.current.off("message_status_updated", deliveredHandler)
-            socket.current.off("messages_seen", seenHandler)
+            socket.current.off("message_receipts", receiptsHandler)
         }
     }, [activeConversationId, currentUser])
 
@@ -340,7 +331,7 @@ export const ChatProvider = ({ children }) => {
                 ...updated[index],
                 lastMessage: message.content,
                 lastMessageId: message._id,
-                lastMessageSender: message.sender,
+                lastMessageSender: message.sender?._id || message.sender,
                 lastMessageStatus: message.status,
                 lastMessageTime: new Date(message.createdAt).toLocaleTimeString([], {
                     hour: "2-digit",

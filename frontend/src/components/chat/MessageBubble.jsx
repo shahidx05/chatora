@@ -6,6 +6,20 @@ import { formatSize } from '../../services/upload.service'
 const thumbUrl = (url) =>
     url.replace('/upload/', '/upload/w_480,c_limit,q_auto,f_auto/');
 
+// 1-to-1: Sent / Delivered / Seen. Groups: same, with "2/4" progress until everyone has it.
+const receiptLabel = (message, isGroupChat) => {
+    const { status, recipientCount: total, deliveredCount, readCount } = message;
+
+    if (status === "seen") return isGroupChat ? "✓✓ Seen by all" : "✓✓ Seen";
+    if (isGroupChat && total > 0) {
+        if (readCount > 0) return `✓✓ Seen by ${readCount}/${total}`;
+        if (status === "delivered") return "✓✓ Delivered";
+        if (deliveredCount > 0) return `✓ Delivered to ${deliveredCount}/${total}`;
+    }
+    if (status === "delivered") return "✓✓ Delivered";
+    return "✓ Sent";
+};
+
 const MessageBubble = ({ message, isMine, isGroupChat }) => {
     if (message.isSystemMessage) {
         return (
@@ -89,15 +103,7 @@ const MessageBubble = ({ message, isMine, isGroupChat }) => {
                 <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-400">
                     <span>{time}</span>
 
-                    {isMine && !isGroupChat && (
-                        <span>
-                            {message.status === "seen"
-                                ? "✓✓ Seen"
-                                : message.status === "delivered"
-                                    ? "✓✓ Delivered"
-                                    : "✓ Sent"}
-                        </span>
-                    )}
+                    {isMine && <span>{receiptLabel(message, isGroupChat)}</span>}
                 </div>
             </div>
         </div>

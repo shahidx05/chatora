@@ -52,15 +52,24 @@ const messageSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+
+    recipients: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
+    deliveredTo: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
+    readBy: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
     status: {
         type: String,
         enum: ['sent', 'delivered', 'seen'],
         default: 'sent'
-    },
-    readBy: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-    }]
+    }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Message', messageSchema);

@@ -30,6 +30,11 @@ const conversationSchema = new mongoose.Schema({
         type: Map,
         of: Number,
         default: {}
+    },
+    lastRead: {
+        type: Map,
+        of: mongoose.Schema.Types.ObjectId,
+        default: {}
     }
 }, { timestamps: true });
 

@@ -10,7 +10,7 @@ exports.getConversations = async (req, res) => {
         })
             .populate('participants', '-password')
             .populate('groupAdmins', '-password') 
-            .populate('lastMessage')
+            .populate({ path: 'lastMessage', select: 'content sender status createdAt type isSystemMessage' })
             .sort({ updatedAt: -1 });
 
         const result = conversations.map(conversation => {

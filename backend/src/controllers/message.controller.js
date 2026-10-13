@@ -1,14 +1,14 @@
 const mongoose = require('mongoose');
 const Message = require('../models/Message');
 const Conversation = require('../models/Conversation');
+const { toClient } = require('../services/receipts.service');
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
 
 // GET /api/messages/:conversationId?before=<messageId>&limit=30
-// Cursor pagination: returns the newest page when `before` is omitted, otherwise
-// the page of messages older than `before`. Messages come back oldest -> newest
-// so the client can render them as they are.
+// Cursor pagination, oldest -> newest. Each message carries its status and
+// delivered/read counts (not the full id arrays).
 exports.getMessages = async (req, res) => {
     try {
         const { conversationId } = req.params;
@@ -23,26 +23,31 @@ exports.getMessages = async (req, res) => {
 
         const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
 
-        const isMember = await Conversation.exists({
+        // membership check and member list in one query
+        const conversation = await Conversation.findOne({
             _id: conversationId,
             participants: req.user.id
-        });
+        }).select('participants').lean();
 
-        if (!isMember) {
+        if (!conversation) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
+        const memberIds = conversation.participants.map(String);
 
         const filter = { conversation: conversationId };
         if (before) filter._id = { $lt: before };
 
-        // fetch one extra row: if it exists, there is another page (no count query needed)
+        // fetch one extra row: if it exists, there is another page
         const rows = await Message.find(filter)
             .sort({ _id: -1 })
             .limit(limit + 1)
-            .populate('sender', '-password');
+            .populate('sender', '-password')
+            .lean();
 
         const hasMore = rows.length > limit;
-        const messages = (hasMore ? rows.slice(0, limit) : rows).reverse();
+        const messages = (hasMore ? rows.slice(0, limit) : rows)
+            .reverse()
+            .map(m => toClient(m, memberIds));
 
         res.status(200).json({
             success: true,
