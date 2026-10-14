@@ -8,6 +8,8 @@ const MessageList = ({ messages, isGroupChat, hasMore, loadingOlder, onLoadOlder
     // what the list looked like after the previous render
     const prev = useRef({ first: null, last: null, scrollHeight: 0 })
     const myId = String(currentUser?.id || currentUser?._id)
+    // map of messageId -> DOM element, used by MessageBubble to scroll-to-original
+    const messageRefs = useRef({})
 
     const loadOlder = () => {
         if (hasMore && !loadingOlder && messages.length > 0) {
@@ -77,6 +79,7 @@ const MessageList = ({ messages, isGroupChat, hasMore, loadingOlder, onLoadOlder
                                 message={message}
                                 isMine={isMine}
                                 isGroupChat={isGroupChat}
+                                messageRefs={messageRefs}
                             />
                         )
                     })}

@@ -48,7 +48,7 @@ const summarize = (msg, memberIds) => {
 const toClient = (doc, memberIds) => {
     const m = typeof doc.toObject === 'function' ? doc.toObject() : doc;
     // eslint-disable-next-line no-unused-vars
-    const { recipients, deliveredTo, readBy, __v, ...rest } = m;
+    const { recipients, deliveredTo, readBy, deletedFor, __v, ...rest } = m;
     return { ...rest, ...summarize(m, memberIds) };
 };
 

@@ -12,7 +12,7 @@ const authMiddleware = (req, res, next) => {
 
     const token = authHeader.split(' ')[1];
 
-    try {
+    try { 
         const payload = jwt.verify(token, process.env.JWT_SECRET)
         req.user = payload;
         next()

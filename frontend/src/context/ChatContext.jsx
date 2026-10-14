@@ -23,6 +23,7 @@ export const ChatProvider = ({ children }) => {
     const [onlineUserIds, setOnlineUserIds] = useState([])
     const [hasMore, setHasMore] = useState(false)
     const [loadingOlder, setLoadingOlder] = useState(false)
+    const [replyTo, setReplyTo] = useState(null) // { messageId, senderName, preview, type }
     const activeIdRef = useRef(null)        // which chat is open right now (for stale-response checks)
     const loadingOlderRef = useRef(false)   // blocks double fetches from rapid scroll events
 
@@ -74,7 +75,7 @@ export const ChatProvider = ({ children }) => {
 
             const senderId = data.sender?._id || data.sender;
             const myId = currentUser?.id || currentUser?._id;
- 
+
             const isIncoming = String(senderId) !== String(myId);
             const isPendingChat = location.pathname.includes('/chat/new/');;
 
@@ -147,23 +148,6 @@ export const ChatProvider = ({ children }) => {
             )
         }
 
-        // const statusHandler = (data) => {
-        //     setMessages(prev =>
-        //         prev.map(msg =>
-        //             String(msg._id) === String(data.messageId) ? { ...msg, status: data.status } : msg
-        //         )
-        //     )
-        //     setConversations(prev =>
-        //         prev.map(conv =>
-        //             conv.lastMessageId === data.messageId
-        //                 ? {
-        //                     ...conv,
-        //                     lastMessageStatus: data.status,
-        //                 }
-        //                 : conv
-        //         )
-        //     );
-        // }
         // receipts for MY messages: { conversationId, updates: [{ messageId, status, deliveredCount, readCount, recipientCount }] }
         const receiptsHandler = ({ conversationId, updates }) => {
             const byId = new Map(updates.map(u => [String(u.messageId), u]))
@@ -189,20 +173,73 @@ export const ChatProvider = ({ children }) => {
             )
         }
 
+        // message_deleted: { conversationId, messageId, scope, affectedReplyIds? }
+        const deletedHandler = ({ conversationId, messageId, scope, affectedReplyIds = [] }) => {
+            if (scope === 'everyone') {
+                const affectedSet = new Set(affectedReplyIds.map(String))
+                // Replace the deleted bubble with a placeholder; update any loaded reply quotes
+                setMessages(prev =>
+                    prev.map(msg => {
+                        if (String(msg._id) === String(messageId)) {
+                            return {
+                                ...msg,
+                                isDeleted: true,
+                                content: 'This message was deleted',
+                                caption: '',
+                                attachment: undefined,
+                                type: 'text'
+                            }
+                        }
+                        // Mark quote blocks pointing at the deleted message as stale
+                        if (affectedSet.size > 0 && affectedSet.has(String(msg._id)) && msg.replyTo) {
+                            return {
+                                ...msg,
+                                replyTo: { ...msg.replyTo, deleted: true, preview: '' }
+                            }
+                        }
+                        return msg
+                    })
+                )
+            } else if (scope === 'me') {
+                // Remove it from the list entirely for this user
+                setMessages(prev => prev.filter(msg => String(msg._id) !== String(messageId)))
+            }
+        }
+
+        // conversation_updated: sidebar repair after a delete
+        const convUpdatedHandler = ({ conversationId, lastMessage, lastMessageId, lastMessageTime }) => {
+            setConversations(prev =>
+                prev.map(conv =>
+                    String(conv.conversationId) === String(conversationId)
+                        ? {
+                            ...conv,
+                            lastMessage: lastMessage === undefined ? conv.lastMessage : lastMessage,
+                            lastMessageId: lastMessageId === undefined ? conv.lastMessageId : lastMessageId,
+                            lastMessageTime: lastMessageTime
+                                ? new Date(lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                : conv.lastMessageTime
+                        }
+                        : conv
+                )
+            )
+        }
+
         socket.current.on("receive_message", receiveHandler)
         socket.current.on("typing", typingHandler)
         socket.current.on("user_online", onlineHandler)
         socket.current.on("user_offline", offlineHandler)
-        // socket.current.on("message_status_updated", statusHandler)
         socket.current.on("message_receipts", receiptsHandler)
+        socket.current.on("message_deleted", deletedHandler)
+        socket.current.on("conversation_updated", convUpdatedHandler)
 
         return () => {
             socket.current.off("receive_message", receiveHandler)
             socket.current.off("typing", typingHandler)
             socket.current.off("user_online", onlineHandler)
             socket.current.off("user_offline", offlineHandler)
-            // socket.current.off("message_status_updated", statusHandler)
             socket.current.off("message_receipts", receiptsHandler)
+            socket.current.off("message_deleted", deletedHandler)
+            socket.current.off("conversation_updated", convUpdatedHandler)
         }
     }, [activeConversationId, currentUser])
 
@@ -262,6 +299,7 @@ export const ChatProvider = ({ children }) => {
         setActiveConversationId(conversationId)
         setHasMore(false)
         setIsTyping(false)
+        setReplyTo(null)
 
         setConversations(prev =>
             prev.map(conv =>
@@ -289,6 +327,7 @@ export const ChatProvider = ({ children }) => {
         setMessages([])
         setHasMore(false)
         setIsTyping(false)
+        setReplyTo(null)
     }
 
     // --- infinite scroll: load the page of messages older than `beforeId` ---
@@ -348,9 +387,10 @@ export const ChatProvider = ({ children }) => {
             return updated;
         });
     }, []);
+
     // --- send a message ---
     // returns a Promise<{ ok, message?, error? }> that resolves when the server acks
-    const sendMessage = (text, conversationId, receiverId, attachment = null) => {
+    const sendMessage = (text, conversationId, receiverId, attachment = null, replyToId = null) => {
         if ((!text.trim() && !attachment) || !socket.current) {
             return Promise.resolve({ ok: false, error: 'Not connected' })
         }
@@ -364,13 +404,26 @@ export const ChatProvider = ({ children }) => {
                 conversationId,
                 message: text,
                 attachment,
-                clientMsgId
+                clientMsgId,
+                replyToId
             }, (err, res) => {
                 if (err) return resolve({ ok: false, error: 'Server did not respond, try again' })
                 resolve(res)
             })
 
             socket.current.emit('typing', { receiver: receiverId, typing: false })
+        })
+    }
+
+    // --- delete a message ---
+    // returns Promise<{ ok, error? }>
+    const deleteMessage = (messageId, scope) => {
+        if (!socket.current) return Promise.resolve({ ok: false, error: 'Not connected' })
+        return new Promise((resolve) => {
+            socket.current.timeout(10000).emit('delete_message', { messageId, scope }, (err, res) => {
+                if (err) return resolve({ ok: false, error: 'Server did not respond' })
+                resolve(res)
+            })
         })
     }
 
@@ -408,10 +461,13 @@ export const ChatProvider = ({ children }) => {
         loadingOlder,
         isTyping,
         currentUser,
+        replyTo,
+        setReplyTo,
         openConversation,
         closeConversation,
         loadOlderMessages,
         sendMessage,
+        deleteMessage,
         handleTyping,
         fetchConversations,
         updateSpecificConversation

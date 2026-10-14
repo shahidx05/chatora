@@ -9,6 +9,8 @@ const MAX_LIMIT = 100;
 // GET /api/messages/:conversationId?before=<messageId>&limit=30
 // Cursor pagination, oldest -> newest. Each message carries its status and
 // delivered/read counts (not the full id arrays).
+// Messages where deletedFor contains req.user.id are excluded.
+// Messages where isDeleted=true are included (as a placeholder).
 exports.getMessages = async (req, res) => {
     try {
         const { conversationId } = req.params;
@@ -34,7 +36,11 @@ exports.getMessages = async (req, res) => {
         }
         const memberIds = conversation.participants.map(String);
 
-        const filter = { conversation: conversationId };
+        const filter = {
+            conversation: conversationId,
+            // exclude messages deleted for this user (scope='me')
+            deletedFor: { $ne: req.user.id }
+        };
         if (before) filter._id = { $lt: before };
 
         // fetch one extra row: if it exists, there is another page

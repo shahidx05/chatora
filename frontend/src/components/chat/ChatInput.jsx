@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
-import { IoSend, IoAttach, IoClose, IoDocumentText } from 'react-icons/io5'
+import { IoSend, IoAttach, IoClose, IoDocumentText, IoArrowUndo } from 'react-icons/io5'
 import { useChat } from '../../context/ChatContext'
 import {
   uploadAttachment, validateFile, formatSize, ACCEPT_ATTR,
 } from '../../services/upload.service'
 
 const ChatInput = ({ conversationId, receiverId }) => {
-  const { sendMessage, handleTyping } = useChat()
+  const { sendMessage, handleTyping, replyTo, setReplyTo } = useChat()
   const [message, setMessage] = useState('')
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null)
@@ -17,6 +17,9 @@ const ChatInput = ({ conversationId, receiverId }) => {
 
   // free the blob URL when the preview changes or the component unmounts
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
+
+  // clear reply when conversation changes
+  useEffect(() => { setReplyTo(null) }, [conversationId])
 
   const clearFile = () => {
     setFile(null)
@@ -56,13 +59,14 @@ const ChatInput = ({ conversationId, receiverId }) => {
         setBusy(true)
         attachment = await uploadAttachment(file, conversationId, setProgress)
       }
-      const res = await sendMessage(message, conversationId, receiverId, attachment)
+      const res = await sendMessage(message, conversationId, receiverId, attachment, replyTo?.messageId || null)
       if (!res?.ok) {
         setError(res?.error || 'Failed to send')
         return
       }
       setMessage('')
       clearFile()
+      setReplyTo(null)
     } catch (err) {
       setError(err.response?.data?.message || 'Upload failed, please try again')
     } finally {
@@ -79,6 +83,26 @@ const ChatInput = ({ conversationId, receiverId }) => {
 
   return (
     <div className="border-t bg-white p-4">
+      {/* Reply bar */}
+      {replyTo && (
+        <div className="mb-3 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
+          <IoArrowUndo size={16} className="text-blue-500 flex-shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-blue-700 truncate">
+              Replying to {replyTo.senderName}
+            </p>
+            <p className="text-xs text-gray-500 truncate italic">{replyTo.preview}</p>
+          </div>
+          <button
+            onClick={() => setReplyTo(null)}
+            aria-label="Cancel reply"
+            className="p-1 text-gray-400 hover:text-gray-700 flex-shrink-0"
+          >
+            <IoClose size={16} />
+          </button>
+        </div>
+      )}
+
       {file && (
         <div className="mb-3 flex items-center gap-3 rounded-xl border bg-gray-50 p-2">
           {preview ? (
@@ -131,7 +155,7 @@ const ChatInput = ({ conversationId, receiverId }) => {
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={file ? 'Add a caption...' : 'Type a message...'}
+          placeholder={file ? 'Add a caption...' : replyTo ? `Reply to ${replyTo.senderName}...` : 'Type a message...'}
           className="flex-1 rounded-full border px-5 py-3 outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button
