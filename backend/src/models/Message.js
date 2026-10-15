@@ -97,4 +97,11 @@ const messageSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
+messageSchema.index({ conversation: 1, _id: -1 });
+messageSchema.index(
+    { sender: 1, clientMsgId: 1 },
+    { unique: true, partialFilterExpression: { clientMsgId: { $type: 'string' } } }
+);
+messageSchema.index({ 'replyTo.messageId': 1 }, { sparse: true });
+
 module.exports = mongoose.model('Message', messageSchema);

@@ -4,7 +4,7 @@ import { addMembers } from '../../services/group.service';
 import { useChat } from '../../context/ChatContext';
 
 const AddMemberModal = ({ isOpen, onClose, conversation }) => {
-    const { fetchConversations, updateSpecificConversation } = useChat();
+    const { updateSpecificConversation } = useChat();
     
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
@@ -121,7 +121,7 @@ const AddMemberModal = ({ isOpen, onClose, conversation }) => {
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-sm font-medium">{user.name}</span>
-                                        <span className="text-[10px] text-gray-400">{user.email}</span>
+                                        <span className="text-[10px] text-gray-400">@{user.username}</span>
                                     </div>
                                 </div>
                             ))

@@ -6,6 +6,8 @@ const { verifyAttachment } = require('../../services/attachment.service');
 const { summarize, markSeen } = require('../../services/receipts.service');
 const { linkContacts } = require('../../services/presence.service');
 const cloudinary = require('../../config/cloudinary');
+const User = require('../../models/User');
+const { hit } = require('../../services/rateLimit.service');
 
 const isParticipant = (conversation, userId) =>
     conversation.participants.some(p => p.equals(userId));
@@ -83,6 +85,11 @@ const registerMessageHandlers = (io, socket) => {
 
         try {
             const senderId = socket.user._id;
+
+            // spam guard shared across instances: max 20 messages per 10 seconds per user
+            const limit = await hit(`msg:${senderId}`, 20, 10);
+            if (!limit.allowed) return ack({ ok: false, error: 'You are sending messages too fast' });
+
             const caption = typeof data?.message === 'string' ? data.message.trim() : '';
             const clientMsgId = typeof data?.clientMsgId === 'string'
                 ? data.clientMsgId.slice(0, 64) : undefined;
@@ -95,6 +102,12 @@ const registerMessageHandlers = (io, socket) => {
             if (data.conversationId) {
                 conversation = await Conversation.findById(data.conversationId);
             } else if (data.receiver) {
+                if (!mongoose.isValidObjectId(data.receiver) || String(data.receiver) === String(senderId)) {
+                    return ack({ ok: false, error: 'Invalid receiver' });
+                }
+                if (!(await User.exists({ _id: data.receiver }))) {
+                    return ack({ ok: false, error: 'User not found' });
+                }
                 conversation = await Conversation.findOne({
                     isGroup: false,
                     participants: { $all: [senderId, data.receiver] },

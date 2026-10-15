@@ -1,14 +1,15 @@
 const User = require('../models/User');
 const bcrypt = require("bcrypt")
 const generateToken = require('../utlis/generateToken');
+const { validateRegister } = require('../utlis/validators');
 
 exports.register = async (req, res) => {
     try {
-        const { name, username, email, password} = req.body;
-
-        if (!name || !username || !email || !password) {
-            return res.status(400).json({ message: "All fields are required" });
+        const { error, value } = validateRegister(req.body);
+        if (error) {
+            return res.status(400).json({ success: false, message: error });
         }
+        const { name, username, email, password } = value;
 
         const user = await User.findOne({
             $or: [{ email }, { username }],
@@ -46,9 +47,10 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password } = req.body || {};
 
-        if (!email || !password) {
+        // plain strings only: an object like {"$ne": null} would become a query operator (NoSQL injection)
+        if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
             return res.status(400).json({ message: "email and password required" });
         }
 

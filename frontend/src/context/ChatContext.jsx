@@ -35,13 +35,58 @@ export const ChatProvider = ({ children }) => {
         conversationsRef.current = conversations
     }, [conversations])
 
+    // latest messages of the open chat, readable from socket callbacks without stale closures
+    const messagesRef = useRef([])
+    useEffect(() => {
+        messagesRef.current = messages
+    }, [messages])
+
     // --- connection setup ---
     useEffect(() => {
         if (!token) return
 
         socket.current = io(import.meta.env.VITE_SOCKET_URL, { auth: { token } })
 
-        socket.current.on('connect', () => console.log('connected', socket.current.id))
+        // after a reconnect, catch up on everything missed while offline
+        let connectedBefore = false
+        const resync = async () => {
+            try {
+                fetchConversations()
+                const openId = activeIdRef.current
+                if (!openId) return
+
+                const data = await getMessages(openId)
+                if (activeIdRef.current !== openId) return // switched chats meanwhile
+
+                const current = messagesRef.current
+                const known = new Set(current.map(m => String(m._id)))
+                const overlaps = data.messages.some(m => known.has(String(m._id)))
+
+                if (current.length && !overlaps) {
+                    // offline longer than one page of messages: restart from the latest page
+                    setMessages(data.messages)
+                    setHasMore(Boolean(data.hasMore))
+                } else {
+                    setMessages(cur => {
+                        const fresh = new Map(data.messages.map(m => [String(m._id), m]))
+                        const have = new Set(cur.map(m => String(m._id)))
+                        return [
+                            ...cur.map(m => fresh.get(String(m._id)) || m),         // refresh status / deletions
+                            ...data.messages.filter(m => !have.has(String(m._id)))  // messages missed while offline
+                        ]
+                    })
+                }
+                socket.current?.emit('mark_seen', { conversationId: openId })
+            } catch (err) {
+                console.error('resync failed:', err)
+            }
+        }
+
+        socket.current.on('connect', () => {
+            console.log('connected', socket.current.id)
+            if (connectedBefore) resync()
+            connectedBefore = true
+        })
         socket.current.on('connect_error', (err) => console.log('Connection failed:', err.message))
 
         socket.current.on("online_users", (onlineIds) => {
